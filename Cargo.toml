@@ -34,7 +34,7 @@ symphonia        = { version = "0.5", features = ["aac", "mp3", "ogg", "isomp4"]
 rodio            = { version = "0.19", default-features = false, features = ["symphonia-all"] }
 
 # Secure storage
-keyring          = "3"
+keyring          = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 
 # Error handling
 anyhow           = "1"
