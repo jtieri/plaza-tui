@@ -34,7 +34,9 @@ fn test_config_round_trip() {
 #[test]
 fn test_config_default_values() {
     let config = Config::default();
-    assert_eq!(config.stream_quality, StreamQuality::Ogg);
+    // MP3 is the default until Opus/HLS decoding lands (Phase 1): it's the only
+    // format this build can decode and the most broadly compatible.
+    assert_eq!(config.stream_quality, StreamQuality::Mp3);
     assert!((config.volume - 0.8).abs() < 0.001);
     assert!(config.image_protocol.is_none());
 }
@@ -44,6 +46,32 @@ fn test_stream_quality_urls() {
     assert!(StreamQuality::Hls.stream_url().contains("hls"));
     assert!(StreamQuality::Ogg.stream_url().contains("ogg"));
     assert!(StreamQuality::Mp3.stream_url().contains("mp3"));
+}
+
+#[test]
+fn test_low_quality_urls_use_underscore_not_slash() {
+    // Regression: the live server 404s on `/mp3/low` and `/ogg/low`; the correct
+    // paths use an underscore. This was a cause of broken playback.
+    assert_eq!(
+        StreamQuality::Mp3Low.stream_url(),
+        "https://radio.plaza.one/mp3_low"
+    );
+    assert_eq!(
+        StreamQuality::OggLow.stream_url(),
+        "https://radio.plaza.one/ogg_low"
+    );
+    assert!(!StreamQuality::Mp3Low.stream_url().contains("/low"));
+    assert!(!StreamQuality::OggLow.stream_url().contains("/low"));
+}
+
+#[test]
+fn test_only_mp3_is_currently_supported() {
+    // Phase 0: only the symphonia-native MP3 path decodes. Opus + HLS arrive in Phase 1.
+    assert!(StreamQuality::Mp3.is_supported());
+    assert!(StreamQuality::Mp3Low.is_supported());
+    assert!(!StreamQuality::Ogg.is_supported());
+    assert!(!StreamQuality::OggLow.is_supported());
+    assert!(!StreamQuality::Hls.is_supported());
 }
 
 #[test]
