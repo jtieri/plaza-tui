@@ -37,7 +37,11 @@ fn test_parse_master_playlist_picks_highest_bandwidth() {
 
     let playlist = m3u8_rs::parse_master_playlist_res(m3u8).expect("master playlist parse");
     assert_eq!(playlist.variants.len(), 3);
-    let highest = playlist.variants.iter().max_by_key(|v| v.bandwidth).unwrap();
+    let highest = playlist
+        .variants
+        .iter()
+        .max_by_key(|v| v.bandwidth)
+        .unwrap();
     assert_eq!(highest.bandwidth, 140800);
     assert_eq!(highest.uri, "aac_hifi.m3u8");
 }

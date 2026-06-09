@@ -1,3 +1,6 @@
+use crate::app::AppState;
+use crate::theme::Theme;
+use crate::tui::widgets::centered_rect;
 use ratatui::{
     layout::Alignment,
     style::Style,
@@ -5,9 +8,6 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
-use crate::app::AppState;
-use crate::theme::Theme;
-use crate::tui::widgets::centered_rect;
 
 pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, _state: &AppState) {
     let popup_area = centered_rect(60, 80, area);

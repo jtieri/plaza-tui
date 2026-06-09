@@ -76,7 +76,11 @@ impl HlsAacPcmSource {
             .spawn(move || fetch_loop(client, media_url, tx, stop_for_thread))
             .map_err(|e| PcmError::Permanent(format!("HLS fetch thread spawn failed: {e}")))?;
 
-        Ok(HlsAacPcmSource { rx, stop, handle: Some(handle) })
+        Ok(HlsAacPcmSource {
+            rx,
+            stop,
+            handle: Some(handle),
+        })
     }
 }
 
@@ -195,7 +199,9 @@ fn poll_once(
             return Poll::Closed;
         }
         let idx = (seq - base_seq) as usize;
-        let Some(seg) = media.segments.get(idx) else { continue };
+        let Some(seg) = media.segments.get(idx) else {
+            continue;
+        };
         let seg_url = resolve_url(media_url, &seg.uri);
         match fetch_and_decode(client, &seg_url, demux) {
             Ok(chunks) => {
@@ -288,7 +294,7 @@ fn select_window(
     let live_edge = media_sequence + segment_count as u64;
     let floor = live_edge.saturating_sub(buffer_segments);
     let start = match next_seq {
-        None => floor,            // first poll: begin buffer_segments behind live
+        None => floor,             // first poll: begin buffer_segments behind live
         Some(ns) => ns.max(floor), // never drift further than buffer_segments behind
     };
     // Clamp into what the playlist actually offers.
@@ -323,7 +329,9 @@ fn resolve_media_url(
         }
         // Some servers hand back a media playlist directly.
         Ok(Playlist::MediaPlaylist(_)) => Ok(master_url.to_string()),
-        Err(_) => Err(PcmError::Permanent("HLS: could not parse master playlist".into())),
+        Err(_) => Err(PcmError::Permanent(
+            "HLS: could not parse master playlist".into(),
+        )),
     }
 }
 
@@ -350,7 +358,10 @@ fn decode_adts_to_chunks(adts: Vec<u8>) -> Vec<PcmChunk> {
     let probed = match symphonia::default::get_probe().format(
         &hint,
         mss,
-        &FormatOptions { enable_gapless: false, ..Default::default() },
+        &FormatOptions {
+            enable_gapless: false,
+            ..Default::default()
+        },
         &MetadataOptions::default(),
     ) {
         Ok(p) => p,
@@ -360,10 +371,11 @@ fn decode_adts_to_chunks(adts: Vec<u8>) -> Vec<PcmChunk> {
     let Some((track_id, params)) = first_audio_track(format.as_ref()) else {
         return Vec::new();
     };
-    let mut decoder = match symphonia::default::get_codecs().make(&params, &DecoderOptions::default()) {
-        Ok(d) => d,
-        Err(_) => return Vec::new(),
-    };
+    let mut decoder =
+        match symphonia::default::get_codecs().make(&params, &DecoderOptions::default()) {
+            Ok(d) => d,
+            Err(_) => return Vec::new(),
+        };
 
     let mut chunks = Vec::new();
     while let Ok(packet) = format.next_packet() {
@@ -446,7 +458,10 @@ mod tests {
         for (ms, count, next) in [(100u64, 5usize, None), (100, 5, Some(0)), (50, 3, Some(40))] {
             let w = select_window(ms, count, next, 2);
             let live = ms + count as u64;
-            assert!(live - w.start <= 2, "latency exceeded buffer for ms={ms} next={next:?}");
+            assert!(
+                live - w.start <= 2,
+                "latency exceeded buffer for ms={ms} next={next:?}"
+            );
         }
     }
 
@@ -467,14 +482,20 @@ mod tests {
         demux.push(seg);
         let adts = demux.take();
         let chunks = decode_adts_to_chunks(adts);
-        assert!(!chunks.is_empty(), "should decode AAC chunks from the segment");
+        assert!(
+            !chunks.is_empty(),
+            "should decode AAC chunks from the segment"
+        );
         let total: usize = chunks.iter().map(|c| c.samples.len()).sum();
         let nonzero: usize = chunks
             .iter()
             .flat_map(|c| c.samples.iter())
             .filter(|s| s.abs() > 1e-6)
             .count();
-        assert!(total > 10_000, "expected substantial audio, got {total} samples");
+        assert!(
+            total > 10_000,
+            "expected substantial audio, got {total} samples"
+        );
         assert!(
             nonzero as f64 / total as f64 > 0.5,
             "segment looks silent: {nonzero}/{total}"

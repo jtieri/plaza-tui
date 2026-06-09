@@ -1,3 +1,6 @@
+use crate::app::AppState;
+use crate::theme::Theme;
+use crate::tui::widgets::centered_rect;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::Style,
@@ -5,9 +8,6 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
-use crate::app::AppState;
-use crate::theme::Theme;
-use crate::tui::widgets::centered_rect;
 
 const LOGO: &str = r#"
  NIGHTWAVE
@@ -86,15 +86,17 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) 
             Theme::dim()
         })
         .style(Style::default().bg(Theme::BACKGROUND));
-    let password_para =
-        Paragraph::new(Span::styled(&masked, Theme::text())).block(password_block);
+    let password_para = Paragraph::new(Span::styled(&masked, Theme::text())).block(password_block);
     frame.render_widget(password_para, form_chunks[1]);
 
     // Hint / error
     let hint = if let Some(err) = &state.login_error {
         Span::styled(err.as_str(), Style::default().fg(Theme::RED))
     } else {
-        Span::styled("[Tab] Switch field  [Enter] Login  [g] Guest Mode", Theme::dim())
+        Span::styled(
+            "[Tab] Switch field  [Enter] Login  [g] Guest Mode",
+            Theme::dim(),
+        )
     };
     let hint_para = Paragraph::new(hint).alignment(Alignment::Center);
     frame.render_widget(hint_para, form_chunks[2]);

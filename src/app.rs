@@ -1,12 +1,7 @@
-use std::time::{Duration, Instant};
-use tokio::sync::mpsc;
-use image::DynamicImage;
-use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use crate::{
-    api::{ApiClient, models::*},
-    audio,
-    auth,
-    config::{Config, StreamQuality},
+    api::{models::*, ApiClient},
+    audio, auth,
+    config::Config,
     socket::SocketClient,
     tui::{
         self,
@@ -15,6 +10,10 @@ use crate::{
         views::View,
     },
 };
+use image::DynamicImage;
+use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
+use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionStatus {
@@ -209,23 +208,7 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
     let mut event_handler = EventHandler::new(socket_rx, audio_error_rx);
     let mut state = AppState::new(&config);
 
-    // Resolve the stream we can actually decode. If the saved preference is a codec
-    // this build can't decode yet (Opus/HLS until Phase 1), fall back to MP3 for this
-    // session without overwriting the stored preference, and tell the user.
-    let stream_quality = if config.stream_quality.is_supported() {
-        config.stream_quality.clone()
-    } else {
-        tracing::warn!(
-            "Stream quality {:?} ({}) is not decodable in this build yet; falling back to MP3",
-            config.stream_quality,
-            config.stream_quality.label()
-        );
-        state.notify(format!(
-            "{} not supported yet — playing MP3 128k instead",
-            config.stream_quality.label()
-        ));
-        StreamQuality::Mp3
-    };
+    let stream_quality = config.stream_quality.clone();
     let stream_url = stream_quality.stream_url().to_string();
     tracing::info!("Active stream: {} ({})", stream_quality.label(), stream_url);
 
@@ -236,8 +219,15 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
         state.view = View::NowPlaying;
         match api.get_status().await {
             Ok(status) => {
-                tracing::info!("Status loaded: {} — {}", status.song.artist, status.song.title);
-                state.artwork_url = status.song.artwork_sm_src.clone()
+                tracing::info!(
+                    "Status loaded: {} — {}",
+                    status.song.artist,
+                    status.song.title
+                );
+                state.artwork_url = status
+                    .song
+                    .artwork_sm_src
+                    .clone()
                     .or_else(|| status.song.artwork_src.clone());
                 state.status_received_at = Some(Instant::now());
                 state.now_playing = Some(status);
@@ -249,7 +239,8 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
 
     // Background pre-fetch channels: history and charts data load in the background
     // so the first navigation to those views is instant.
-    let (history_prefetch_tx, mut history_prefetch_rx) = mpsc::channel::<Paginated<HistoryEntry>>(2);
+    let (history_prefetch_tx, mut history_prefetch_rx) =
+        mpsc::channel::<Paginated<HistoryEntry>>(2);
     let (charts_prefetch_tx, mut charts_prefetch_rx) = mpsc::channel::<Paginated<RatingEntry>>(2);
     let mut last_song_id_for_prefetch: Option<String> = None;
     // Favorite status for the open popup: (is_favorited, favorite_id)
@@ -294,7 +285,9 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
                     match reqwest::get(&url).await {
                         Ok(resp) => match resp.bytes().await {
                             Ok(bytes) => match image::load_from_memory(&bytes) {
-                                Ok(img) => { let _ = tx.send(img).await; }
+                                Ok(img) => {
+                                    let _ = tx.send(img).await;
+                                }
                                 Err(e) => tracing::warn!("Artwork decode failed: {}", e),
                             },
                             Err(e) => tracing::warn!("Artwork fetch body failed: {}", e),
@@ -361,16 +354,24 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
                 let tx = favorite_status_tx.clone();
                 tokio::spawn(async move {
                     match api2.get_song(&id).await {
-                        Ok(sr) => { let _ = tx.send((sr.is_favorited, sr.favorite_id)).await; }
-                        Err(_) => { let _ = tx.send((false, None)).await; }
+                        Ok(sr) => {
+                            let _ = tx.send((sr.is_favorited, sr.favorite_id)).await;
+                        }
+                        Err(_) => {
+                            let _ = tx.send((false, None)).await;
+                        }
                     }
                 });
             }
         }
 
         // Popup: artwork tracking
-        let popup_url = state.show_song_detail.as_ref()
-            .and_then(|d| d.song.artwork_src.clone().or_else(|| d.song.artwork_sm_src.clone()));
+        let popup_url = state.show_song_detail.as_ref().and_then(|d| {
+            d.song
+                .artwork_src
+                .clone()
+                .or_else(|| d.song.artwork_sm_src.clone())
+        });
         if popup_url != popup_artwork_url {
             popup_artwork_url = popup_url.clone();
             popup_artwork = None;
@@ -380,7 +381,9 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
                     match reqwest::get(&url).await {
                         Ok(resp) => match resp.bytes().await {
                             Ok(bytes) => match image::load_from_memory(&bytes) {
-                                Ok(img) => { let _ = tx.send(img).await; }
+                                Ok(img) => {
+                                    let _ = tx.send(img).await;
+                                }
                                 Err(e) => tracing::warn!("Popup artwork decode failed: {}", e),
                             },
                             Err(e) => tracing::warn!("Popup artwork fetch body failed: {}", e),
@@ -401,7 +404,11 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
                     if let Some(ref mut p) = player {
                         // start_live() calls stop_inner() internally, so this correctly
                         // replaces any currently-playing preview.
-                        tracing::info!("Starting stream: {} ({})", stream_quality.label(), stream_url);
+                        tracing::info!(
+                            "Starting stream: {} ({})",
+                            stream_quality.label(),
+                            stream_url
+                        );
                         match p.start_live(stream_quality.clone()) {
                             Ok(()) => {
                                 state.is_playing = true;
@@ -421,7 +428,9 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
                     if let Some(ref mut p) = player {
                         tracing::info!("Starting preview URL: {}", url);
                         match p.start_preview(url) {
-                            Ok(()) => { state.is_playing = true; }
+                            Ok(()) => {
+                                state.is_playing = true;
+                            }
                             Err(e) => {
                                 tracing::error!("Player preview error: {}", e);
                                 state.notify(format!("Audio error: {}", e));
@@ -498,7 +507,9 @@ async fn handle_event(event: AppEvent, state: &mut AppState, api: &mut ApiClient
         AppEvent::StatusUpdate(s) => {
             tracing::debug!("Socket status update: {} — {}", s.song.artist, s.song.title);
             // Detect song change → invalidate history so it refreshes next view
-            let song_changed = state.now_playing.as_ref()
+            let song_changed = state
+                .now_playing
+                .as_ref()
                 .map(|np| np.song.id_str() != s.song.id_str())
                 .unwrap_or(true);
             if song_changed {
@@ -506,7 +517,10 @@ async fn handle_event(event: AppEvent, state: &mut AppState, api: &mut ApiClient
                 state.history.page = 0;
             }
             // Track artwork URL for change detection in main loop
-            state.artwork_url = s.song.artwork_sm_src.clone()
+            state.artwork_url = s
+                .song
+                .artwork_sm_src
+                .clone()
                 .or_else(|| s.song.artwork_src.clone());
             state.status_received_at = Some(Instant::now());
             state.now_playing = Some(s);
@@ -559,7 +573,10 @@ async fn handle_event(event: AppEvent, state: &mut AppState, api: &mut ApiClient
                                 state.history.items = h.data;
                                 state.history.last_page = h.meta.last_page;
                                 state.history.page = 1;
-                                tracing::info!("History loaded: {} items", state.history.items.len());
+                                tracing::info!(
+                                    "History loaded: {} items",
+                                    state.history.items.len()
+                                );
                             }
                             Err(e) => {
                                 tracing::warn!("History load failed: {}", e);
@@ -624,11 +641,15 @@ async fn handle_event(event: AppEvent, state: &mut AppState, api: &mut ApiClient
                     if state.user.is_none() && state.is_authenticated {
                         tracing::info!("Loading profile");
                         match api.get_me().await {
-                            Ok(u) => { state.user = Some(u); }
+                            Ok(u) => {
+                                state.user = Some(u);
+                            }
                             Err(e) => tracing::error!("get_me failed: {}", e),
                         }
                         match api.get_my_stats().await {
-                            Ok(s) => { state.user_stats = Some(s); }
+                            Ok(s) => {
+                                state.user_stats = Some(s);
+                            }
                             Err(e) => tracing::error!("get_my_stats failed: {}", e),
                         }
                     }
@@ -749,8 +770,15 @@ async fn handle_login_key(
             state.view = View::NowPlaying;
             match api.get_status().await {
                 Ok(status) => {
-                    tracing::info!("Status loaded: {} — {}", status.song.artist, status.song.title);
-                    state.artwork_url = status.song.artwork_sm_src.clone()
+                    tracing::info!(
+                        "Status loaded: {} — {}",
+                        status.song.artist,
+                        status.song.title
+                    );
+                    state.artwork_url = status
+                        .song
+                        .artwork_sm_src
+                        .clone()
                         .or_else(|| status.song.artwork_src.clone());
                     state.now_playing = Some(status);
                 }
@@ -778,8 +806,15 @@ async fn handle_login_key(
                     state.view = View::NowPlaying;
                     match api.get_status().await {
                         Ok(status) => {
-                            tracing::info!("Status loaded: {} — {}", status.song.artist, status.song.title);
-                            state.artwork_url = status.song.artwork_sm_src.clone()
+                            tracing::info!(
+                                "Status loaded: {} — {}",
+                                status.song.artist,
+                                status.song.title
+                            );
+                            state.artwork_url = status
+                                .song
+                                .artwork_sm_src
+                                .clone()
                                 .or_else(|| status.song.artwork_src.clone());
                             state.now_playing = Some(status);
                         }
@@ -811,10 +846,7 @@ async fn handle_login_key(
     }
 }
 
-async fn handle_now_playing_key(
-    key: crossterm::event::KeyEvent,
-    state: &mut AppState,
-) {
+async fn handle_now_playing_key(key: crossterm::event::KeyEvent, state: &mut AppState) {
     use crossterm::event::KeyCode;
 
     match key.code {
@@ -946,15 +978,13 @@ async fn handle_list_key(
                 _ => {}
             }
         }
-        KeyCode::Char('g') => {
-            match view_name {
-                "history" => state.history.selected = 0,
-                "favorites" => state.favorites.selected = 0,
-                "charts" => state.charts.selected = 0,
-                "news" => state.news.selected = 0,
-                _ => {}
-            }
-        }
+        KeyCode::Char('g') => match view_name {
+            "history" => state.history.selected = 0,
+            "favorites" => state.favorites.selected = 0,
+            "charts" => state.charts.selected = 0,
+            "news" => state.news.selected = 0,
+            _ => {}
+        },
         KeyCode::Char('G') => {
             let bottom = len.saturating_sub(1);
             match view_name {
@@ -967,7 +997,8 @@ async fn handle_list_key(
         }
         KeyCode::Enter if view_name == "history" && selected < len => {
             let entry = &state.history.items[selected];
-            state.show_song_detail = Some(SongDetailState::new(entry.song.clone(), entry.played_at));
+            state.show_song_detail =
+                Some(SongDetailState::new(entry.song.clone(), entry.played_at));
         }
         KeyCode::Enter if view_name == "charts" && selected < len => {
             let song = state.charts.items[selected].song.clone();
@@ -1058,7 +1089,12 @@ async fn handle_profile_key(
     }
 }
 
-fn render(frame: &mut ratatui::Frame, state: &AppState, artwork: &mut Option<StatefulProtocol>, popup_artwork: &mut Option<StatefulProtocol>) {
+fn render(
+    frame: &mut ratatui::Frame,
+    state: &AppState,
+    artwork: &mut Option<StatefulProtocol>,
+    popup_artwork: &mut Option<StatefulProtocol>,
+) {
     use crate::tui::views;
     use ratatui::style::Style;
     use ratatui::widgets::{Block, Clear};
@@ -1115,15 +1151,11 @@ fn render(frame: &mut ratatui::Frame, state: &AppState, artwork: &mut Option<Sta
     }
 }
 
-fn render_header(
-    frame: &mut ratatui::Frame,
-    area: ratatui::layout::Rect,
-    state: &AppState,
-) {
+fn render_header(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, state: &AppState) {
+    use crate::theme::Theme;
     use ratatui::layout::Alignment;
     use ratatui::text::{Line, Span, Text};
     use ratatui::widgets::Paragraph;
-    use crate::theme::Theme;
 
     let logo = "\u{266b} NIGHTWAVE PLAZA";
     let song_info = state
@@ -1138,18 +1170,16 @@ fn render_header(
     ]);
 
     let block = crate::tui::widgets::vaporwave_block("Plaza TUI");
-    let para = Paragraph::new(text).block(block).alignment(Alignment::Center);
+    let para = Paragraph::new(text)
+        .block(block)
+        .alignment(Alignment::Center);
     frame.render_widget(para, area);
 }
 
-fn render_sidebar(
-    frame: &mut ratatui::Frame,
-    area: ratatui::layout::Rect,
-    state: &AppState,
-) {
+fn render_sidebar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, state: &AppState) {
+    use crate::theme::Theme;
     use ratatui::text::{Line, Span};
     use ratatui::widgets::{Block, Borders, List, ListItem};
-    use crate::theme::Theme;
 
     let items: Vec<ListItem> = View::nav_items()
         .iter()
@@ -1172,14 +1202,10 @@ fn render_sidebar(
     frame.render_widget(list, area);
 }
 
-fn render_status_bar(
-    frame: &mut ratatui::Frame,
-    area: ratatui::layout::Rect,
-    state: &AppState,
-) {
+fn render_status_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, state: &AppState) {
+    use crate::theme::Theme;
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
-    use crate::theme::Theme;
 
     let connection_span = match state.connection {
         ConnectionStatus::Connected => Span::styled(
@@ -1202,9 +1228,17 @@ fn render_status_bar(
         .map(|np| format!(" | \u{25c9} {} listening", np.listeners))
         .unwrap_or_default();
 
-    let play_state = if state.is_playing { " | \u{25b6} Playing" } else { "" };
+    let play_state = if state.is_playing {
+        " | \u{25b6} Playing"
+    } else {
+        ""
+    };
     let volume = format!(" | Vol: {:.0}%", state.volume * 100.0);
-    let auth_note = if !state.is_authenticated { " | Guest" } else { "" };
+    let auth_note = if !state.is_authenticated {
+        " | Guest"
+    } else {
+        ""
+    };
 
     let notification = state
         .notification
@@ -1217,7 +1251,10 @@ fn render_status_bar(
     let line = Line::from(vec![
         connection_span,
         Span::styled(&listeners, Theme::dim()),
-        Span::styled(play_state, ratatui::style::Style::default().fg(Theme::GREEN)),
+        Span::styled(
+            play_state,
+            ratatui::style::Style::default().fg(Theme::GREEN),
+        ),
         Span::styled(&volume, Theme::dim()),
         Span::styled(auth_note, Theme::dim()),
         Span::styled(
@@ -1227,7 +1264,6 @@ fn render_status_bar(
         Span::styled(hints, Theme::dim()),
     ]);
 
-    let para =
-        Paragraph::new(line).style(ratatui::style::Style::default().bg(Theme::BACKGROUND));
+    let para = Paragraph::new(line).style(ratatui::style::Style::default().bg(Theme::BACKGROUND));
     frame.render_widget(para, area);
 }

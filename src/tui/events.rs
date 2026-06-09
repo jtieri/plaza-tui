@@ -1,10 +1,10 @@
+use crate::api::models::StatusResource;
+use crate::socket::SocketEvent;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures_util::StreamExt;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::interval;
-use crate::api::models::StatusResource;
-use crate::socket::SocketEvent;
 
 #[derive(Debug, Clone)]
 pub enum AppEvent {

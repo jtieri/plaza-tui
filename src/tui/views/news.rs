@@ -1,11 +1,11 @@
+use crate::app::AppState;
+use crate::theme::Theme;
+use crate::tui::widgets::vaporwave_block;
 use ratatui::{
     text::{Line, Span},
     widgets::{List, ListItem, ListState, Paragraph},
     Frame,
 };
-use crate::app::AppState;
-use crate::theme::Theme;
-use crate::tui::widgets::vaporwave_block;
 
 /// Strip HTML tags and decode common HTML entities for display in TUI.
 fn strip_html(s: &str) -> String {
@@ -55,7 +55,11 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) 
             } else {
                 Theme::dim()
             };
-            let text_style = if is_selected { Theme::text() } else { Theme::dim() };
+            let text_style = if is_selected {
+                Theme::text()
+            } else {
+                Theme::dim()
+            };
 
             let header = format!(
                 "{} by {}",

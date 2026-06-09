@@ -65,21 +65,6 @@ fn test_low_quality_urls_use_underscore_not_slash() {
 }
 
 #[test]
-fn test_all_qualities_supported() {
-    // Phase 1: MP3 (symphonia), Opus (libopus), and HLS/AAC (TS demux + symphonia)
-    // are all decodable.
-    for q in [
-        StreamQuality::Mp3,
-        StreamQuality::Mp3Low,
-        StreamQuality::Ogg,
-        StreamQuality::OggLow,
-        StreamQuality::Hls,
-    ] {
-        assert!(q.is_supported(), "{q:?} should be supported");
-    }
-}
-
-#[test]
 fn test_config_serialize_deserialize_all_qualities() {
     for quality in [
         StreamQuality::Hls,

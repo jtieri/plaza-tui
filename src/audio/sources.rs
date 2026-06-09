@@ -58,7 +58,10 @@ impl Read for HttpStreamSource {
 
 impl Seek for HttpStreamSource {
     fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "stream is not seekable"))
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "stream is not seekable",
+        ))
     }
 }
 
@@ -128,13 +131,15 @@ impl SymphoniaPcmSource {
             .format(
                 &hint,
                 mss,
-                &FormatOptions { enable_gapless: false, ..Default::default() },
+                &FormatOptions {
+                    enable_gapless: false,
+                    ..Default::default()
+                },
                 &MetadataOptions::default(),
             )
             .map_err(|_| PcmError::Ended)?;
         let format = probed.format;
-        let (track_id, params) =
-            first_audio_track(format.as_ref()).ok_or(PcmError::Ended)?;
+        let (track_id, params) = first_audio_track(format.as_ref()).ok_or(PcmError::Ended)?;
         let decoder = symphonia::default::get_codecs()
             .make(&params, &DecoderOptions::default())
             .map_err(|e| {
@@ -142,13 +147,16 @@ impl SymphoniaPcmSource {
                     "audio codec not supported ({e}). Try a different stream quality."
                 ))
             })?;
-        Ok(SymphoniaPcmSource { format, decoder, track_id })
+        Ok(SymphoniaPcmSource {
+            format,
+            decoder,
+            track_id,
+        })
     }
 
     /// Re-init decoder at a chained-stream boundary (e.g. a new Vorbis logical stream).
     fn reset(&mut self) -> Result<(), PcmError> {
-        let (track_id, params) =
-            first_audio_track(self.format.as_ref()).ok_or(PcmError::Ended)?;
+        let (track_id, params) = first_audio_track(self.format.as_ref()).ok_or(PcmError::Ended)?;
         self.track_id = track_id;
         self.decoder = symphonia::default::get_codecs()
             .make(&params, &DecoderOptions::default())
@@ -185,7 +193,11 @@ impl PcmSource for SymphoniaPcmSource {
             if samples.is_empty() {
                 continue;
             }
-            return Ok(Some(PcmChunk::new(samples, spec.rate, spec.channels.count() as u16)));
+            return Ok(Some(PcmChunk::new(
+                samples,
+                spec.rate,
+                spec.channels.count() as u16,
+            )));
         }
     }
 }
@@ -212,11 +224,15 @@ impl OpusPcmSource {
         let mut hint = Hint::new();
         hint.mime_type("audio/ogg");
         let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
             .map_err(|_| PcmError::Ended)?;
         let format = probed.format;
-        let (track_id, params) =
-            first_audio_track(format.as_ref()).ok_or(PcmError::Ended)?;
+        let (track_id, params) = first_audio_track(format.as_ref()).ok_or(PcmError::Ended)?;
         let channels = params.channels.map(|c| c.count() as u16).unwrap_or(2);
         let decoder = make_opus_decoder(channels)?;
         Ok(OpusPcmSource {
@@ -262,7 +278,10 @@ impl PcmSource for OpusPcmSource {
                 continue;
             }
             let nch = self.channels.max(1) as usize;
-            match self.decoder.decode_float(&packet.data, &mut self.out, false) {
+            match self
+                .decoder
+                .decode_float(&packet.data, &mut self.out, false)
+            {
                 Ok(per_ch) => {
                     let n = per_ch * nch;
                     if n == 0 {

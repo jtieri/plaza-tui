@@ -1,6 +1,6 @@
+use crate::error::{PlazaError, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::error::{PlazaError, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -14,8 +14,8 @@ pub enum StreamQuality {
 
 impl Default for StreamQuality {
     fn default() -> Self {
-        // MP3 is the only format decodable today (Opus/HLS arrive in Phase 1) and
-        // is the most broadly compatible, so it is the safe default.
+        // MP3 plays everywhere with no extra setup, which makes it the least
+        // surprising default. Lower-bandwidth Opus and adaptive HLS are opt-in.
         StreamQuality::Mp3
     }
 }
@@ -33,7 +33,7 @@ impl StreamQuality {
         }
     }
 
-    /// Human-readable label for notifications / UI.
+    /// Human-readable label for notifications and the UI.
     pub fn label(&self) -> &'static str {
         match self {
             StreamQuality::Hls => "HLS/AAC",
@@ -42,13 +42,6 @@ impl StreamQuality {
             StreamQuality::Mp3 => "MP3 128k",
             StreamQuality::Mp3Low => "MP3 96k",
         }
-    }
-
-    /// Whether this client can decode this stream. Every Plaza format is now
-    /// supported: MP3 + Vorbis via symphonia, Opus via libopus, and HLS/AAC via
-    /// the MPEG-TS demuxer + symphonia AAC. Kept as a guard for graceful fallback.
-    pub fn is_supported(&self) -> bool {
-        true
     }
 }
 
@@ -95,10 +88,6 @@ impl Config {
             .map_err(|e| PlazaError::Config(format!("Failed to read config: {}", e)))?;
         let config: Config = toml::from_str(&content)
             .map_err(|e| PlazaError::Config(format!("Failed to parse config: {}", e)))?;
-        // The stored preference is kept verbatim — if the selected quality isn't
-        // decodable yet (Opus/HLS until Phase 1), the run loop falls back to MP3 at
-        // runtime via StreamQuality::is_supported() without overwriting the file, so
-        // the preference is honoured automatically once that codec is supported.
         Ok(config)
     }
 

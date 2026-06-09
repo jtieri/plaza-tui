@@ -52,46 +52,37 @@ impl SocketClient {
                                             let _ = s.send(SocketEvent::Status(status));
                                         }
                                         Err(e) => {
-                                            tracing::warn!(
-                                                "Failed to parse status event: {}",
-                                                e
-                                            );
+                                            tracing::warn!("Failed to parse status event: {}", e);
                                         }
                                     }
                                 }
                             }
                         })
                     })
-                    .on(
-                        "listeners",
-                        move |payload: Payload, _socket: Client| {
-                            let s = s_listeners.clone();
-                            Box::pin(async move {
-                                if let Payload::Text(values) = payload {
-                                    if let Some(first) = values.into_iter().next() {
-                                        if let Some(n) = first.as_u64() {
-                                            let _ = s.send(SocketEvent::Listeners(n as u32));
-                                        }
+                    .on("listeners", move |payload: Payload, _socket: Client| {
+                        let s = s_listeners.clone();
+                        Box::pin(async move {
+                            if let Payload::Text(values) = payload {
+                                if let Some(first) = values.into_iter().next() {
+                                    if let Some(n) = first.as_u64() {
+                                        let _ = s.send(SocketEvent::Listeners(n as u32));
                                     }
                                 }
-                            })
-                        },
-                    )
-                    .on(
-                        "reactions",
-                        move |payload: Payload, _socket: Client| {
-                            let s = s_reactions.clone();
-                            Box::pin(async move {
-                                if let Payload::Text(values) = payload {
-                                    if let Some(first) = values.into_iter().next() {
-                                        if let Some(n) = first.as_u64() {
-                                            let _ = s.send(SocketEvent::Reactions(n as u32));
-                                        }
+                            }
+                        })
+                    })
+                    .on("reactions", move |payload: Payload, _socket: Client| {
+                        let s = s_reactions.clone();
+                        Box::pin(async move {
+                            if let Payload::Text(values) = payload {
+                                if let Some(first) = values.into_iter().next() {
+                                    if let Some(n) = first.as_u64() {
+                                        let _ = s.send(SocketEvent::Reactions(n as u32));
                                     }
                                 }
-                            })
-                        },
-                    )
+                            }
+                        })
+                    })
                     .on("disconnect", move |_payload: Payload, _socket: Client| {
                         let s = s_disconnect.clone();
                         Box::pin(async move {

@@ -1,11 +1,11 @@
-mod error;
-mod config;
-mod auth;
-mod theme;
-mod socket;
-mod app;
 mod api;
+mod app;
 mod audio;
+mod auth;
+mod config;
+mod error;
+mod socket;
+mod theme;
 mod tui;
 
 use clap::Parser;
@@ -13,7 +13,11 @@ use std::path::PathBuf;
 use tracing_subscriber::{fmt, EnvFilter};
 
 #[derive(Parser, Debug)]
-#[command(name = "plaza-tui", about = "Nightwave Plaza TUI - Vaporwave radio in your terminal", version)]
+#[command(
+    name = "plaza-tui",
+    about = "Nightwave Plaza TUI - Vaporwave radio in your terminal",
+    version
+)]
 pub struct Cli {
     /// Reset saved authentication token
     #[arg(long)]
@@ -41,8 +45,7 @@ fn setup_logging(log_level: &str) -> anyhow::Result<()> {
         .append(true)
         .open(log_file)?;
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(log_level));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     fmt()
         .with_env_filter(filter)

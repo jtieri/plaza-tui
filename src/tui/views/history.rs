@@ -1,11 +1,11 @@
+use crate::app::AppState;
+use crate::theme::Theme;
+use crate::tui::widgets::vaporwave_block;
 use ratatui::{
     text::{Line, Span},
     widgets::{List, ListItem, ListState, Paragraph},
     Frame,
 };
-use crate::app::AppState;
-use crate::theme::Theme;
-use crate::tui::widgets::vaporwave_block;
 
 pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let block = vaporwave_block("History");

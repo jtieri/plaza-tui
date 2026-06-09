@@ -1,5 +1,5 @@
-use crate::api::ApiClient;
 use crate::api::models::{LoginForm, LoginResponse};
+use crate::api::ApiClient;
 use crate::error::{AuthError, PlazaError, Result};
 use keyring::Entry;
 use std::path::PathBuf;
@@ -15,12 +15,7 @@ pub async fn login(client: &ApiClient, username: &str, password: &str) -> Result
     };
 
     let url = client.url("v2/auth/token");
-    let response: reqwest::Response = client
-        .client
-        .post(&url)
-        .json(&form)
-        .send()
-        .await?;
+    let response: reqwest::Response = client.client.post(&url).json(&form).send().await?;
 
     match response.status() {
         s if s == 200 || s == 201 => {
@@ -50,12 +45,10 @@ pub async fn logout(client: &ApiClient) -> Result<()> {
 pub fn save_token(token: &str) {
     // Save to keyring
     match Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {
-        Ok(entry) => {
-            match entry.set_password(token) {
-                Ok(()) => tracing::debug!("Token saved to keyring"),
-                Err(e) => tracing::warn!("Failed to save token to keyring: {}", e),
-            }
-        }
+        Ok(entry) => match entry.set_password(token) {
+            Ok(()) => tracing::debug!("Token saved to keyring"),
+            Err(e) => tracing::warn!("Failed to save token to keyring: {}", e),
+        },
         Err(e) => tracing::warn!("Failed to access keyring: {}", e),
     }
 
@@ -66,15 +59,13 @@ pub fn save_token(token: &str) {
 pub fn load_token() -> Option<String> {
     // Try keyring first
     match Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {
-        Ok(entry) => {
-            match entry.get_password() {
-                Ok(token) => {
-                    tracing::debug!("Token loaded from keyring");
-                    return Some(token);
-                }
-                Err(e) => tracing::debug!("Keyring load failed: {}", e),
+        Ok(entry) => match entry.get_password() {
+            Ok(token) => {
+                tracing::debug!("Token loaded from keyring");
+                return Some(token);
             }
-        }
+            Err(e) => tracing::debug!("Keyring load failed: {}", e),
+        },
         Err(e) => tracing::debug!("Keyring access failed: {}", e),
     }
 

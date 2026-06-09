@@ -105,7 +105,9 @@ impl TsDemux {
         if self.pmt_pid.is_some() {
             return;
         }
-        let Some(section) = psi_section(payload, pusi) else { return };
+        let Some(section) = psi_section(payload, pusi) else {
+            return;
+        };
         // table_id 0x00 = PAT. Section: table_id(1) sec_len(2) tsid(2) ver(1) sec#(1)
         // last#(1) then program loop, minus 4-byte CRC at the end.
         if section.len() < 8 || section[0] != 0x00 {
@@ -130,7 +132,9 @@ impl TsDemux {
         if self.audio_pid.is_some() {
             return;
         }
-        let Some(section) = psi_section(payload, pusi) else { return };
+        let Some(section) = psi_section(payload, pusi) else {
+            return;
+        };
         // table_id 0x02 = PMT.
         if section.len() < 12 || section[0] != 0x02 {
             return;
@@ -143,7 +147,8 @@ impl TsDemux {
         while i + 5 <= end.saturating_sub(4) {
             let stream_type = section[i];
             let elementary_pid = (((section[i + 1] & 0x1F) as u16) << 8) | section[i + 2] as u16;
-            let es_info_length = (((section[i + 3] & 0x0F) as usize) << 8) | section[i + 4] as usize;
+            let es_info_length =
+                (((section[i + 3] & 0x0F) as usize) << 8) | section[i + 4] as usize;
             if stream_type == STREAM_TYPE_AAC_ADTS || stream_type == STREAM_TYPE_AAC_LATM {
                 self.audio_pid = Some(elementary_pid);
                 return;
@@ -207,14 +212,26 @@ mod tests {
     #[test]
     fn extracts_adts_from_real_segment() {
         let seg = include_bytes!("../../tests/fixtures/hls_aac_segment.ts");
-        assert_eq!(seg.len() % TS_PACKET_LEN, 0, "fixture should be whole TS packets");
+        assert_eq!(
+            seg.len() % TS_PACKET_LEN,
+            0,
+            "fixture should be whole TS packets"
+        );
         let adts = extract_adts(seg);
         assert!(!adts.is_empty(), "should extract ADTS bytes");
         // ADTS syncword: 12 bits set (0xFFF) -> first byte 0xFF, next byte high nibble 0xF.
         assert_eq!(adts[0], 0xFF, "ADTS must start with sync byte 0xFF");
-        assert_eq!(adts[1] & 0xF0, 0xF0, "ADTS second byte high nibble must be 0xF");
+        assert_eq!(
+            adts[1] & 0xF0,
+            0xF0,
+            "ADTS second byte high nibble must be 0xF"
+        );
         // Sanity: a 4s AAC segment is a substantial amount of ADTS data.
-        assert!(adts.len() > 10_000, "unexpectedly little ADTS: {} bytes", adts.len());
+        assert!(
+            adts.len() > 10_000,
+            "unexpectedly little ADTS: {} bytes",
+            adts.len()
+        );
     }
 
     /// The audio PID must be discovered via PAT/PMT (0x100 for this fixture).

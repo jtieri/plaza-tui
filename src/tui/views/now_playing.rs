@@ -1,3 +1,6 @@
+use crate::app::AppState;
+use crate::theme::Theme;
+use crate::tui::widgets::vaporwave_block;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::Style,
@@ -6,9 +9,6 @@ use ratatui::{
     Frame,
 };
 use ratatui_image::{protocol::StatefulProtocol, StatefulImage};
-use crate::app::AppState;
-use crate::theme::Theme;
-use crate::tui::widgets::vaporwave_block;
 
 pub fn render(
     frame: &mut Frame,
@@ -44,7 +44,11 @@ fn render_artwork(
         // Placeholder: alternating color unicode blocks
         let art_lines: Vec<Line> = (0..inner.height)
             .map(|i| {
-                let color = if i % 2 == 0 { Theme::PURPLE } else { Theme::PINK };
+                let color = if i % 2 == 0 {
+                    Theme::PURPLE
+                } else {
+                    Theme::PINK
+                };
                 Line::from(Span::styled(
                     "\u{2588}".repeat(inner.width as usize),
                     Style::default().fg(color),
@@ -107,14 +111,19 @@ fn render_info(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState)
     );
 
     // Duration gauge — advance position client-side using elapsed time since last status update
-    let elapsed = state.status_received_at
+    let elapsed = state
+        .status_received_at
         .map(|t| t.elapsed().as_secs_f64())
         .unwrap_or(0.0);
-    let position = (np.song.position.unwrap_or(0.0) + elapsed)
-        .min(np.song.length.unwrap_or(0) as f64);
+    let position =
+        (np.song.position.unwrap_or(0.0) + elapsed).min(np.song.length.unwrap_or(0) as f64);
     let length = np.song.length.unwrap_or(1).max(1) as f64;
     let progress = (position / length).clamp(0.0, 1.0);
-    let progress = if progress.is_nan() || progress.is_infinite() { 0.0 } else { progress };
+    let progress = if progress.is_nan() || progress.is_infinite() {
+        0.0
+    } else {
+        progress
+    };
     let pos_str = {
         let secs = position as u32;
         format!("{}:{:02}", secs / 60, secs % 60)

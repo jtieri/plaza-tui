@@ -49,7 +49,10 @@ fn decode_pcm_stats(bytes: Vec<u8>, mime: &str) -> (usize, usize) {
         .format(
             &hint,
             mss,
-            &FormatOptions { enable_gapless: false, ..Default::default() },
+            &FormatOptions {
+                enable_gapless: false,
+                ..Default::default()
+            },
             &MetadataOptions::default(),
         )
         .expect("probe format");
@@ -72,9 +75,14 @@ fn decode_pcm_stats(bytes: Vec<u8>, mime: &str) -> (usize, usize) {
         if packet.track_id() != track_id {
             continue;
         }
-        let Ok(decoded) = decoder.decode(&packet) else { continue };
+        let Ok(decoded) = decoder.decode(&packet) else {
+            continue;
+        };
         if sample_buf.is_none() {
-            sample_buf = Some(SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec()));
+            sample_buf = Some(SampleBuffer::<f32>::new(
+                decoded.capacity() as u64,
+                *decoded.spec(),
+            ));
         }
         let sb = sample_buf.as_mut().unwrap();
         sb.copy_interleaved_ref(decoded);
@@ -125,15 +133,23 @@ fn drain_source(mut source: Box<dyn PcmSource>, max_chunks: usize) -> (usize, us
 
 fn assert_audible(label: &str, total: usize, nonzero: usize) {
     eprintln!("{label}: {total} samples, {nonzero} non-zero");
-    assert!(total > 10_000, "{label}: too little audio ({total} samples)");
-    assert!(nonzero as f64 / total as f64 > 0.5, "{label}: looks silent ({nonzero}/{total})");
+    assert!(
+        total > 10_000,
+        "{label}: too little audio ({total} samples)"
+    );
+    assert!(
+        nonzero as f64 / total as f64 > 0.5,
+        "{label}: looks silent ({nonzero}/{total})"
+    );
 }
 
 #[test]
 #[ignore = "network: exercises SymphoniaPcmSource against live /mp3"]
 fn test_mp3_source_decodes() {
     use plaza_tui::audio::sources::SymphoniaPcmSource;
-    let url = plaza_tui::config::StreamQuality::Mp3.stream_url().to_string();
+    let url = plaza_tui::config::StreamQuality::Mp3
+        .stream_url()
+        .to_string();
     let source = SymphoniaPcmSource::open(url, "audio/mpeg").expect("open mp3 source");
     let (t, nz) = drain_source(Box::new(source), 400);
     assert_audible("MP3 source", t, nz);
@@ -143,7 +159,9 @@ fn test_mp3_source_decodes() {
 #[ignore = "network: exercises OpusPcmSource against live /ogg"]
 fn test_opus_source_decodes() {
     use plaza_tui::audio::sources::OpusPcmSource;
-    let url = plaza_tui::config::StreamQuality::Ogg.stream_url().to_string();
+    let url = plaza_tui::config::StreamQuality::Ogg
+        .stream_url()
+        .to_string();
     let source = OpusPcmSource::open(url).expect("open opus source");
     let (t, nz) = drain_source(Box::new(source), 400);
     assert_audible("Opus source", t, nz);
@@ -153,7 +171,9 @@ fn test_opus_source_decodes() {
 #[ignore = "network: exercises HlsAacPcmSource against live /hls"]
 fn test_hls_source_decodes() {
     use plaza_tui::audio::hls::HlsAacPcmSource;
-    let url = plaza_tui::config::StreamQuality::Hls.stream_url().to_string();
+    let url = plaza_tui::config::StreamQuality::Hls
+        .stream_url()
+        .to_string();
     let source = HlsAacPcmSource::open(url).expect("open hls source");
     let (t, nz) = drain_source(Box::new(source), 400);
     assert_audible("HLS source", t, nz);
@@ -164,10 +184,17 @@ fn test_hls_source_decodes() {
 fn test_mp3_stream_decodes_to_audio() {
     let url = plaza_tui::config::StreamQuality::Mp3.stream_url();
     let bytes = fetch_bytes(url, 256 * 1024);
-    assert!(bytes.len() > 32 * 1024, "fetched too little: {} bytes", bytes.len());
+    assert!(
+        bytes.len() > 32 * 1024,
+        "fetched too little: {} bytes",
+        bytes.len()
+    );
     let (total, nonzero) = decode_pcm_stats(bytes, "audio/mpeg");
     eprintln!("MP3: decoded {total} samples, {nonzero} non-zero");
-    assert!(total > 10_000, "expected substantial decoded audio, got {total} samples");
+    assert!(
+        total > 10_000,
+        "expected substantial decoded audio, got {total} samples"
+    );
     assert!(
         nonzero as f64 / total as f64 > 0.5,
         "stream looks silent: {nonzero}/{total} non-zero"
@@ -187,7 +214,12 @@ fn test_ogg_opus_decodes_with_libopus() {
     let mut hint = Hint::new();
     hint.mime_type("audio/ogg");
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .expect("ogg probe");
     let mut format = probed.format;
     let track = format
@@ -200,7 +232,11 @@ fn test_ogg_opus_decodes_with_libopus() {
         1 => Channels::Mono,
         _ => Channels::Stereo,
     };
-    let nch = if matches!(channels, Channels::Mono) { 1 } else { 2 };
+    let nch = if matches!(channels, Channels::Mono) {
+        1
+    } else {
+        2
+    };
     let mut decoder = OpusDecoder::new(48_000, channels).expect("opus decoder");
 
     let mut total = 0usize;
@@ -223,7 +259,10 @@ fn test_ogg_opus_decodes_with_libopus() {
         }
     }
     eprintln!("OPUS: decoded {total} samples, {nonzero} non-zero ({nch}ch)");
-    assert!(total > 10_000, "expected substantial decoded opus audio, got {total}");
+    assert!(
+        total > 10_000,
+        "expected substantial decoded opus audio, got {total}"
+    );
     assert!(
         nonzero as f64 / total as f64 > 0.5,
         "opus stream looks silent: {nonzero}/{total}"
@@ -241,7 +280,12 @@ fn test_ogg_stream_is_opus_and_currently_undecodable() {
     let mut hint = Hint::new();
     hint.mime_type("audio/ogg");
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .expect("ogg container should still probe");
     let track = probed
         .format
@@ -251,8 +295,11 @@ fn test_ogg_stream_is_opus_and_currently_undecodable() {
         .cloned();
     // The container parses, but making a decoder fails (no Opus support).
     if let Some(track) = track {
-        let made = symphonia::default::get_codecs()
-            .make(&track.codec_params, &DecoderOptions::default());
-        assert!(made.is_err(), "expected Opus to be undecodable by symphonia today");
+        let made =
+            symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default());
+        assert!(
+            made.is_err(),
+            "expected Opus to be undecodable by symphonia today"
+        );
     }
 }

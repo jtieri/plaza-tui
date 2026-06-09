@@ -1,9 +1,9 @@
+use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
-use chrono::{Utc, TimeZone};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Song {
-    pub id: serde_json::Value,   // could be int or string
+    pub id: serde_json::Value, // could be int or string
     pub artist: String,
     pub album: Option<String>,
     pub title: String,
@@ -55,8 +55,7 @@ impl User {
     pub fn member_since(&self) -> String {
         match self.created_at {
             Some(ts) => {
-                let dt = Utc.timestamp_opt(ts, 0).single()
-                    .unwrap_or_else(Utc::now);
+                let dt = Utc.timestamp_opt(ts, 0).single().unwrap_or_else(Utc::now);
                 dt.format("%B %Y").to_string()
             }
             None => "Unknown".to_string(),
@@ -124,8 +123,7 @@ impl HistoryEntry {
     pub fn played_at_display(&self) -> String {
         match self.played_at {
             Some(ts) => {
-                let dt = Utc.timestamp_opt(ts, 0).single()
-                    .unwrap_or_else(Utc::now);
+                let dt = Utc.timestamp_opt(ts, 0).single().unwrap_or_else(Utc::now);
                 dt.format("%m/%d %H:%M").to_string()
             }
             None => "--/-- --:--".to_string(),
@@ -155,8 +153,7 @@ impl NewsItem {
     pub fn created_at_display(&self) -> String {
         match self.created_at {
             Some(ts) => {
-                let dt = Utc.timestamp_opt(ts, 0).single()
-                    .unwrap_or_else(Utc::now);
+                let dt = Utc.timestamp_opt(ts, 0).single().unwrap_or_else(Utc::now);
                 dt.format("%Y-%m-%d %H:%M").to_string()
             }
             None => "Unknown".to_string(),

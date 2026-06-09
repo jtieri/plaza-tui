@@ -1,5 +1,5 @@
-pub mod models;
 pub mod client;
+pub mod models;
 
 use reqwest::Client;
 use std::time::Duration;
@@ -45,7 +45,11 @@ impl ApiClient {
         format!("{}/{}", self.base_url, path.trim_start_matches('/'))
     }
 
-    pub(crate) fn auth_request(&self, method: reqwest::Method, url: &str) -> reqwest::RequestBuilder {
+    pub(crate) fn auth_request(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+    ) -> reqwest::RequestBuilder {
         let builder = self.client.request(method, url);
         if let Some(token) = &self.token {
             builder.bearer_auth(token)

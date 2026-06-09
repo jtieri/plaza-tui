@@ -16,7 +16,11 @@ pub struct PcmChunk {
 
 impl PcmChunk {
     pub fn new(samples: Vec<f32>, sample_rate: u32, channels: u16) -> Self {
-        PcmChunk { samples, sample_rate, channels }
+        PcmChunk {
+            samples,
+            sample_rate,
+            channels,
+        }
     }
 
     pub fn is_empty(&self) -> bool {

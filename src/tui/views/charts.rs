@@ -1,13 +1,13 @@
+use crate::api::models::RatingRange;
+use crate::app::AppState;
+use crate::theme::Theme;
+use crate::tui::widgets::vaporwave_block;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     text::{Line, Span},
     widgets::{List, ListItem, ListState, Paragraph},
     Frame,
 };
-use crate::api::models::RatingRange;
-use crate::app::AppState;
-use crate::theme::Theme;
-use crate::tui::widgets::vaporwave_block;
 
 pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let block = vaporwave_block("Charts");
@@ -20,7 +20,11 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) 
         .split(inner);
 
     // Tab bar
-    let tabs = [RatingRange::Overtime, RatingRange::Weekly, RatingRange::Monthly];
+    let tabs = [
+        RatingRange::Overtime,
+        RatingRange::Weekly,
+        RatingRange::Monthly,
+    ];
     let tab_spans: Vec<Span> = tabs
         .iter()
         .map(|r| {

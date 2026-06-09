@@ -313,7 +313,11 @@ struct SinkFeeder {
 
 impl SinkFeeder {
     fn new() -> Self {
-        SinkFeeder { pending: Vec::with_capacity(16384), rate: 0, channels: 0 }
+        SinkFeeder {
+            pending: Vec::with_capacity(16384),
+            rate: 0,
+            channels: 0,
+        }
     }
 
     fn push(
@@ -474,7 +478,10 @@ mod tests {
             run_audio_loop(factory, no_sink(), rx, StreamMode::Live, None);
         });
         std::thread::sleep(Duration::from_millis(700));
-        assert!(calls.load(Ordering::SeqCst) >= 2, "live mode should retry open failures");
+        assert!(
+            calls.load(Ordering::SeqCst) >= 2,
+            "live mode should retry open failures"
+        );
         tx.send(PlayerCommand::Stop).unwrap();
         drop(tx);
         handle.join().unwrap();
@@ -505,7 +512,9 @@ mod tests {
         let c = Arc::clone(&calls);
         let factory = move || -> std::result::Result<Box<dyn PcmSource>, PcmError> {
             c.fetch_add(1, Ordering::SeqCst);
-            Ok(Box::new(FakeSource { behavior: Behavior::Permanent("unsupported codec".into()) }))
+            Ok(Box::new(FakeSource {
+                behavior: Behavior::Permanent("unsupported codec".into()),
+            }))
         };
         let (_tx, rx) = sync_channel::<PlayerCommand>(8);
         let (err_tx, mut err_rx) = tokio::sync::mpsc::channel::<String>(8);
@@ -513,7 +522,11 @@ mod tests {
             run_audio_loop(factory, no_sink(), rx, StreamMode::Live, Some(err_tx));
         });
         handle.join().unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "permanent failure must not retry");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "permanent failure must not retry"
+        );
         assert_eq!(err_rx.try_recv().ok().as_deref(), Some("unsupported codec"));
     }
 
@@ -543,14 +556,19 @@ mod tests {
         let c = Arc::clone(&calls);
         let factory = move || -> std::result::Result<Box<dyn PcmSource>, PcmError> {
             c.fetch_add(1, Ordering::SeqCst);
-            Ok(Box::new(FakeSource { behavior: Behavior::End }))
+            Ok(Box::new(FakeSource {
+                behavior: Behavior::End,
+            }))
         };
         let (tx, rx) = sync_channel::<PlayerCommand>(8);
         let handle = std::thread::spawn(move || {
             run_audio_loop(factory, no_sink(), rx, StreamMode::Live, None);
         });
         std::thread::sleep(Duration::from_millis(700));
-        assert!(calls.load(Ordering::SeqCst) >= 2, "transient end should reconnect");
+        assert!(
+            calls.load(Ordering::SeqCst) >= 2,
+            "transient end should reconnect"
+        );
         tx.send(PlayerCommand::Stop).unwrap();
         drop(tx);
         handle.join().unwrap();
@@ -559,7 +577,8 @@ mod tests {
     /// Stop between reconnect attempts must terminate the loop promptly.
     #[test]
     fn stop_terminates_live_loop_during_backoff() {
-        let factory = || -> std::result::Result<Box<dyn PcmSource>, PcmError> { Err(PcmError::Ended) };
+        let factory =
+            || -> std::result::Result<Box<dyn PcmSource>, PcmError> { Err(PcmError::Ended) };
         let (tx, rx) = sync_channel::<PlayerCommand>(8);
         let handle = std::thread::spawn(move || {
             run_audio_loop(factory, no_sink(), rx, StreamMode::Live, None);
@@ -569,6 +588,9 @@ mod tests {
         tx.send(PlayerCommand::Stop).unwrap();
         drop(tx);
         handle.join().unwrap();
-        assert!(start.elapsed() < Duration::from_secs(2), "Stop should be prompt");
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "Stop should be prompt"
+        );
     }
 }

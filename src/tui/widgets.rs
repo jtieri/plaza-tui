@@ -1,3 +1,5 @@
+use crate::app::SongDetailState;
+use crate::theme::Theme;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
@@ -6,8 +8,6 @@ use ratatui::{
     Frame,
 };
 use ratatui_image::{protocol::StatefulProtocol, StatefulImage};
-use crate::app::SongDetailState;
-use crate::theme::Theme;
 
 pub fn vaporwave_block(title: &str) -> Block<'_> {
     Block::default()
@@ -41,8 +41,7 @@ pub fn render_song_detail_popup(
         frame.render_stateful_widget(StatefulImage::default(), cols[1], protocol);
     } else {
         // Placeholder block
-        let art_block = Block::default()
-            .style(Style::default().bg(Theme::PURPLE));
+        let art_block = Block::default().style(Style::default().bg(Theme::PURPLE));
         frame.render_widget(art_block, cols[1]);
     }
 
@@ -120,7 +119,9 @@ pub fn render_song_detail_popup(
     let played_str = match detail.played_at {
         Some(ts) => {
             use chrono::{TimeZone, Utc};
-            let dt = Utc.timestamp_opt(ts, 0).single()
+            let dt = Utc
+                .timestamp_opt(ts, 0)
+                .single()
                 .map(|d| d.format("First Played: %b %-d, %Y").to_string())
                 .unwrap_or_default();
             dt
@@ -135,17 +136,18 @@ pub fn render_song_detail_popup(
     }
 
     // Key hints
-    let preview_hint = if detail.is_previewing { "[p] Stop Preview" } else { "[p] Preview" };
+    let preview_hint = if detail.is_previewing {
+        "[p] Stop Preview"
+    } else {
+        "[p] Preview"
+    };
     let fav_hint = if !detail.loading_favorite && detail.is_favorited {
         "[f] Unfavorite"
     } else {
         "[f] Favorite"
     };
     let hints = format!("{}  {}  [Esc] Close", preview_hint, fav_hint);
-    frame.render_widget(
-        Paragraph::new(Span::styled(hints, Theme::dim())),
-        rows[9],
-    );
+    frame.render_widget(Paragraph::new(Span::styled(hints, Theme::dim())), rows[9]);
 
     // Preview indicator overlay
     if detail.is_previewing {

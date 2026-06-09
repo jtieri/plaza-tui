@@ -1,7 +1,7 @@
 pub mod events;
 pub mod layout;
-pub mod widgets;
 pub mod views;
+pub mod widgets;
 
 use crossterm::{
     event::{DisableBracketedPaste, EnableBracketedPaste},
@@ -24,7 +24,11 @@ pub fn setup_terminal() -> anyhow::Result<Term> {
 
 pub fn restore_terminal(terminal: &mut Term) -> anyhow::Result<()> {
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableBracketedPaste)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableBracketedPaste
+    )?;
     terminal.show_cursor()?;
     Ok(())
 }

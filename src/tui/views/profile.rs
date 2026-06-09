@@ -1,11 +1,11 @@
+use crate::app::AppState;
+use crate::theme::Theme;
+use crate::tui::widgets::vaporwave_block;
 use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
 };
-use crate::app::AppState;
-use crate::theme::Theme;
-use crate::tui::widgets::vaporwave_block;
 
 pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let block = vaporwave_block("Profile");
@@ -13,10 +13,7 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) 
     frame.render_widget(block, area);
 
     if !state.is_authenticated {
-        let para = Paragraph::new(Span::styled(
-            "Login required to view profile",
-            Theme::dim(),
-        ));
+        let para = Paragraph::new(Span::styled("Login required to view profile", Theme::dim()));
         frame.render_widget(para, inner);
         return;
     }

@@ -1,4 +1,7 @@
-use crate::api::{ApiClient, models::{*, DataWrapper}};
+use crate::api::{
+    models::{DataWrapper, *},
+    ApiClient,
+};
 use crate::error::{ApiError, AuthError, PlazaError, Result};
 use reqwest::Method;
 
@@ -31,7 +34,8 @@ impl ApiClient {
     pub async fn add_favorite(&self, song_id: &str) -> Result<FavoriteEntry> {
         let url = self.url("v2/users/me/favorites");
         let body = serde_json::json!({ "song_id": song_id });
-        let resp = self.auth_request(Method::POST, &url)
+        let resp = self
+            .auth_request(Method::POST, &url)
             .json(&body)
             .send()
             .await?;
@@ -46,28 +50,43 @@ impl ApiClient {
             s if s.is_success() => Ok(()),
             s if s == 401 => Err(PlazaError::Auth(AuthError::Unauthorized)),
             s if s == 404 => Err(PlazaError::Api(ApiError::NotFound)),
-            s => Err(PlazaError::Api(ApiError::ServerError { status: s.as_u16() })),
+            s => Err(PlazaError::Api(ApiError::ServerError {
+                status: s.as_u16(),
+            })),
         }
     }
 
     pub async fn send_reaction(&self, reaction: u8) -> Result<u32> {
         let url = self.url("v2/reactions");
         let body = serde_json::json!({ "reaction": reaction });
-        let resp = self.auth_request(Method::POST, &url)
+        let resp = self
+            .auth_request(Method::POST, &url)
             .json(&body)
             .send()
             .await?;
         let value: serde_json::Value = self.handle_response(resp).await?;
-        value.get("reactions")
+        value
+            .get("reactions")
             .and_then(|v| v.as_u64())
             .map(|v| v as u32)
-            .ok_or_else(|| PlazaError::Api(ApiError::UnexpectedResponse(
-                "Missing reactions field".to_string()
-            )))
+            .ok_or_else(|| {
+                PlazaError::Api(ApiError::UnexpectedResponse(
+                    "Missing reactions field".to_string(),
+                ))
+            })
     }
 
-    pub async fn get_ratings(&self, range: RatingRange, page: u32) -> Result<Paginated<RatingEntry>> {
-        let url = format!("{}/v2/ratings/{}?page={}", self.base_url, range.as_str(), page);
+    pub async fn get_ratings(
+        &self,
+        range: RatingRange,
+        page: u32,
+    ) -> Result<Paginated<RatingEntry>> {
+        let url = format!(
+            "{}/v2/ratings/{}?page={}",
+            self.base_url,
+            range.as_str(),
+            page
+        );
         let resp = self.client.get(&url).send().await?;
         self.handle_response(resp).await
     }
@@ -92,15 +111,18 @@ impl ApiClient {
         self.handle_response(resp).await
     }
 
-    async fn handle_response<T: serde::de::DeserializeOwned>(&self, resp: reqwest::Response) -> Result<T> {
+    async fn handle_response<T: serde::de::DeserializeOwned>(
+        &self,
+        resp: reqwest::Response,
+    ) -> Result<T> {
         match resp.status() {
-            s if s.is_success() => {
-                resp.json::<T>().await.map_err(PlazaError::Http)
-            }
+            s if s.is_success() => resp.json::<T>().await.map_err(PlazaError::Http),
             s if s == 401 => Err(PlazaError::Auth(AuthError::Unauthorized)),
             s if s == 429 => Err(PlazaError::Api(ApiError::RateLimited)),
             s if s == 404 => Err(PlazaError::Api(ApiError::NotFound)),
-            s => Err(PlazaError::Api(ApiError::ServerError { status: s.as_u16() })),
+            s => Err(PlazaError::Api(ApiError::ServerError {
+                status: s.as_u16(),
+            })),
         }
     }
 }
