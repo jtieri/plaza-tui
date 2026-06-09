@@ -44,13 +44,11 @@ impl StreamQuality {
         }
     }
 
-    /// Whether this client can currently decode this stream.
-    ///
-    /// Phase 0 only ships the symphonia-native MP3 path. Opus (`/ogg*`) needs a
-    /// libopus decoder and HLS needs an MPEG-TS demuxer; both land in Phase 1, at
-    /// which point this returns true for every variant.
+    /// Whether this client can decode this stream. Every Plaza format is now
+    /// supported: MP3 + Vorbis via symphonia, Opus via libopus, and HLS/AAC via
+    /// the MPEG-TS demuxer + symphonia AAC. Kept as a guard for graceful fallback.
     pub fn is_supported(&self) -> bool {
-        matches!(self, StreamQuality::Mp3 | StreamQuality::Mp3Low)
+        true
     }
 }
 

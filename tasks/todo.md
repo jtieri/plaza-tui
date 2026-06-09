@@ -39,17 +39,22 @@
 - [x] Tests: permanent-error⇒no-retry + reports error; transient⇒retry; `_low` URL mapping;
       `is_supported` matrix; live MP3 decode smoke test (ignored/network).
 
-### Phase 1 — Codec parity (the core ask)
-- [ ] Refactor audio into a codec-agnostic layer: a `PcmSource` that yields
-      `(samples: Vec<f32>, rate, channels)` chunks; the existing sink-feed/backpressure/command
-      loop is shared by all sources.
-  - [ ] `SymphoniaPcmSource` — MP3 (+ keeps Vorbis working via symphonia-all).
-  - [ ] `OpusPcmSource` — symphonia Ogg demux for packets → **libopus** decode (`audiopus`,
-        building libopus from source so end users need no system package, only a C toolchain).
-  - [ ] `HlsPcmSource` — `m3u8-rs` playlist + sliding media playlist poll + minimal MPEG-TS
-        audio demux → ADTS → symphonia AAC. Rework `hls.rs` into this.
-- [ ] Wire all 5 qualities through `StreamQuality`; HLS bitrate select (auto/lo/mid/hi).
-- [ ] Tests: TS demuxer (fixture segment), m3u8 parse, Opus packet decode smoke, source dispatch.
+### Phase 1 — Codec parity (the core ask) — DONE 2026-06-08
+- [x] Codec-agnostic `PcmSource` layer (`audio/pcm.rs`): yields `PcmChunk{samples,rate,channels}`;
+      `Ok(None)` = live-edge wait. Player loop (`audio/player.rs`) shares sink-feed/backpressure
+      (`SinkFeeder`) + reconnect policy across all sources.
+  - [x] `SymphoniaPcmSource` — MP3 (+ Vorbis via symphonia-all); handles chained-stream resets.
+  - [x] `OpusPcmSource` — symphonia Ogg demux → **libopus** (`opus` crate, vendored libopus
+        built from source; no system lib needed for released binaries).
+  - [x] `HlsAacPcmSource` (`audio/hls.rs` rewritten) — `m3u8-rs` master→variant (highest
+        bitrate), media-playlist poll w/ media-sequence dedup, MPEG-TS demux (`audio/ts.rs`,
+        hand-rolled PAT/PMT/PES) → symphonia AAC.
+- [x] All 5 qualities wired via `build_live_source`; `is_supported()` now true for all.
+- [x] Tests: TS demux (real fixture `tests/fixtures/hls_aac_segment.ts`), HLS decode (offline
+      fixture→AAC PCM), m3u8 parse, player retry/permanent/stop policy. Live smoke tests
+      (`--ignored`) prove MP3/Opus/HLS sources decode to >99% non-silent PCM from real endpoints.
+
+  Verified live: Opus 767993/768000, HLS 819185/819200, MP3 918075/921600 non-zero samples.
 
 ### Phase 2 — Productionize
 - [ ] Kill dead code & clippy warnings (target `clippy -D warnings`); remove unused error variants.

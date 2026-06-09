@@ -65,13 +65,18 @@ fn test_low_quality_urls_use_underscore_not_slash() {
 }
 
 #[test]
-fn test_only_mp3_is_currently_supported() {
-    // Phase 0: only the symphonia-native MP3 path decodes. Opus + HLS arrive in Phase 1.
-    assert!(StreamQuality::Mp3.is_supported());
-    assert!(StreamQuality::Mp3Low.is_supported());
-    assert!(!StreamQuality::Ogg.is_supported());
-    assert!(!StreamQuality::OggLow.is_supported());
-    assert!(!StreamQuality::Hls.is_supported());
+fn test_all_qualities_supported() {
+    // Phase 1: MP3 (symphonia), Opus (libopus), and HLS/AAC (TS demux + symphonia)
+    // are all decodable.
+    for q in [
+        StreamQuality::Mp3,
+        StreamQuality::Mp3Low,
+        StreamQuality::Ogg,
+        StreamQuality::OggLow,
+        StreamQuality::Hls,
+    ] {
+        assert!(q.is_supported(), "{q:?} should be supported");
+    }
 }
 
 #[test]

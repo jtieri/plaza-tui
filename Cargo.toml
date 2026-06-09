@@ -29,6 +29,9 @@ m3u8-rs          = "6"
 
 # Audio decoding
 symphonia        = { version = "0.5", features = ["aac", "mp3", "ogg", "isomp4"] }
+# Opus decoder (symphonia has none). FFI to libopus, statically vendored/built
+# from source so released binaries need no system library.
+opus             = "0.3"
 
 # Audio output
 rodio            = { version = "0.19", default-features = false, features = ["symphonia-all"] }

@@ -399,10 +399,10 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
             match cmd {
                 PendingAudioCommand::Start => {
                     if let Some(ref mut p) = player {
-                        // Always stop first — start_live_stream calls stop_inner() internally,
-                        // so this correctly replaces any currently-playing preview.
-                        tracing::info!("Starting stream: {}", stream_url);
-                        match p.start_live_stream(stream_url.clone()) {
+                        // start_live() calls stop_inner() internally, so this correctly
+                        // replaces any currently-playing preview.
+                        tracing::info!("Starting stream: {} ({})", stream_quality.label(), stream_url);
+                        match p.start_live(stream_quality.clone()) {
                             Ok(()) => {
                                 state.is_playing = true;
                                 tracing::info!("Audio playback started");
@@ -419,11 +419,11 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
                 }
                 PendingAudioCommand::StartUrl(url) => {
                     if let Some(ref mut p) = player {
-                        tracing::info!("Starting stream URL: {}", url);
-                        match p.start_stream(url) {
+                        tracing::info!("Starting preview URL: {}", url);
+                        match p.start_preview(url) {
                             Ok(()) => { state.is_playing = true; }
                             Err(e) => {
-                                tracing::error!("Player start_url error: {}", e);
+                                tracing::error!("Player preview error: {}", e);
                                 state.notify(format!("Audio error: {}", e));
                             }
                         }
