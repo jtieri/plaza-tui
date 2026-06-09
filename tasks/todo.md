@@ -56,6 +56,19 @@
 
   Verified live: Opus 767993/768000, HLS 819185/819200, MP3 918075/921600 non-zero samples.
 
+### Phase 1 follow-up — HLS drop-outs + drift fix — DONE 2026-06-09
+User report: HLS cut out a few times mid-song, and the Now Playing tab showed the next
+song ~20s before the audio actually changed (audio drifting behind the live-edge metadata).
+- Cause: HLS did fetch+decode synchronously inside `next_chunk`, starving the sink during
+  each refill (drop-outs); and it started from the OLDEST segment and played every segment
+  in order, so it ran ~12s behind live and the gap grew on every stall (never re-syncing).
+- Fix: background fetch/decode thread feeds a bounded channel; `next_chunk` is now a
+  non-blocking `try_recv` so playback never stalls on the network. `select_window` bounds
+  latency to `BUFFER_SEGMENTS` (2 ≈ 8s) behind live and **skips forward** to re-sync if a
+  stall left us further behind, instead of accumulating drift.
+- Tests: 6 `select_window` cases (first-poll start, steady, nothing-new, skip-forward on
+  fall-behind, latency-never-exceeds-buffer, empty playlist). Live HLS smoke still 99.9%.
+
 ### Phase 2 — Productionize
 - [ ] Kill dead code & clippy warnings (target `clippy -D warnings`); remove unused error variants.
 - [ ] Consistent error surfacing to the UI; no silent failures.
