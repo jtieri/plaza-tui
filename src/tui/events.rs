@@ -1,4 +1,4 @@
-use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures_util::StreamExt;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
@@ -44,6 +44,11 @@ impl EventHandler {
             // Terminal events
             event = self.event_stream.next() => {
                 match event {
+                    // Ignore key-release events: terminals with the kitty keyboard
+                    // protocol (or Windows) emit Press AND Release for every key, which
+                    // would double-fire actions and make navigation feel broken. We act
+                    // on Press/Repeat only.
+                    Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Release => AppEvent::Tick,
                     Some(Ok(Event::Key(key))) => {
                         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                             AppEvent::Quit

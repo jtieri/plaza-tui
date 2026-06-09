@@ -14,7 +14,9 @@ pub enum StreamQuality {
 
 impl Default for StreamQuality {
     fn default() -> Self {
-        StreamQuality::Ogg
+        // MP3 is the only format decodable today (Opus/HLS arrive in Phase 1) and
+        // is the most broadly compatible, so it is the safe default.
+        StreamQuality::Mp3
     }
 }
 
@@ -23,10 +25,30 @@ impl StreamQuality {
         match self {
             StreamQuality::Hls => "https://radio.plaza.one/hls",
             StreamQuality::Ogg => "https://radio.plaza.one/ogg",
-            StreamQuality::OggLow => "https://radio.plaza.one/ogg/low",
+            // NOTE: the low-quality paths use an underscore, not a slash.
+            // `/ogg/low` and `/mp3/low` return 404 on the live server.
+            StreamQuality::OggLow => "https://radio.plaza.one/ogg_low",
             StreamQuality::Mp3 => "https://radio.plaza.one/mp3",
-            StreamQuality::Mp3Low => "https://radio.plaza.one/mp3/low",
+            StreamQuality::Mp3Low => "https://radio.plaza.one/mp3_low",
         }
+    }
+
+    /// Human-readable label for notifications / UI.
+    pub fn label(&self) -> &'static str {
+        match self {
+            StreamQuality::Hls => "HLS/AAC",
+            StreamQuality::Ogg => "Opus 64k",
+            StreamQuality::OggLow => "Opus 96k",
+            StreamQuality::Mp3 => "MP3 128k",
+            StreamQuality::Mp3Low => "MP3 96k",
+        }
+    }
+
+    /// Whether this client can decode this stream. Every Plaza format is now
+    /// supported: MP3 + Vorbis via symphonia, Opus via libopus, and HLS/AAC via
+    /// the MPEG-TS demuxer + symphonia AAC. Kept as a guard for graceful fallback.
+    pub fn is_supported(&self) -> bool {
+        true
     }
 }
 
@@ -71,13 +93,12 @@ impl Config {
         }
         let content = std::fs::read_to_string(&path)
             .map_err(|e| PlazaError::Config(format!("Failed to read config: {}", e)))?;
-        let mut config: Config = toml::from_str(&content)
+        let config: Config = toml::from_str(&content)
             .map_err(|e| PlazaError::Config(format!("Failed to parse config: {}", e)))?;
-        // HLS segments use MPEG-TS which symphonia cannot decode — migrate to OGG
-        if config.stream_quality == StreamQuality::Hls {
-            config.stream_quality = StreamQuality::Ogg;
-            let _ = config.save();
-        }
+        // The stored preference is kept verbatim — if the selected quality isn't
+        // decodable yet (Opus/HLS until Phase 1), the run loop falls back to MP3 at
+        // runtime via StreamQuality::is_supported() without overwriting the file, so
+        // the preference is honoured automatically once that codec is supported.
         Ok(config)
     }
 

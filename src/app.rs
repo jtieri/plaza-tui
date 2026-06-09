@@ -6,7 +6,7 @@ use crate::{
     api::{ApiClient, models::*},
     audio,
     auth,
-    config::Config,
+    config::{Config, StreamQuality},
     socket::SocketClient,
     tui::{
         self,
@@ -184,8 +184,12 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
         }
     };
 
-    // Audio error channel — kept for EventHandler interface; player errors are logged to file
+    // Audio error channel — the audio thread reports unrecoverable failures (e.g. an
+    // undecodable codec) here so the UI can surface them instead of silently retrying.
     let (audio_error_tx, audio_error_rx) = mpsc::channel::<String>(8);
+    if let Some(p) = &mut player {
+        p.set_error_sender(audio_error_tx.clone());
+    }
     let _audio_error_tx = audio_error_tx; // keep alive so channel never auto-closes
 
     // Socket client (non-fatal)
@@ -204,7 +208,26 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
 
     let mut event_handler = EventHandler::new(socket_rx, audio_error_rx);
     let mut state = AppState::new(&config);
-    let stream_url = config.stream_quality.stream_url().to_string();
+
+    // Resolve the stream we can actually decode. If the saved preference is a codec
+    // this build can't decode yet (Opus/HLS until Phase 1), fall back to MP3 for this
+    // session without overwriting the stored preference, and tell the user.
+    let stream_quality = if config.stream_quality.is_supported() {
+        config.stream_quality.clone()
+    } else {
+        tracing::warn!(
+            "Stream quality {:?} ({}) is not decodable in this build yet; falling back to MP3",
+            config.stream_quality,
+            config.stream_quality.label()
+        );
+        state.notify(format!(
+            "{} not supported yet — playing MP3 128k instead",
+            config.stream_quality.label()
+        ));
+        StreamQuality::Mp3
+    };
+    let stream_url = stream_quality.stream_url().to_string();
+    tracing::info!("Active stream: {} ({})", stream_quality.label(), stream_url);
 
     // If a saved token exists, skip login and go straight to NowPlaying
     if api.is_authenticated() {
@@ -376,10 +399,10 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
             match cmd {
                 PendingAudioCommand::Start => {
                     if let Some(ref mut p) = player {
-                        // Always stop first — start_stream calls stop_inner() internally,
-                        // so this correctly replaces any currently-playing preview.
-                        tracing::info!("Starting stream: {}", stream_url);
-                        match p.start_stream(stream_url.clone()) {
+                        // start_live() calls stop_inner() internally, so this correctly
+                        // replaces any currently-playing preview.
+                        tracing::info!("Starting stream: {} ({})", stream_quality.label(), stream_url);
+                        match p.start_live(stream_quality.clone()) {
                             Ok(()) => {
                                 state.is_playing = true;
                                 tracing::info!("Audio playback started");
@@ -396,11 +419,11 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
                 }
                 PendingAudioCommand::StartUrl(url) => {
                     if let Some(ref mut p) = player {
-                        tracing::info!("Starting stream URL: {}", url);
-                        match p.start_stream(url) {
+                        tracing::info!("Starting preview URL: {}", url);
+                        match p.start_preview(url) {
                             Ok(()) => { state.is_playing = true; }
                             Err(e) => {
-                                tracing::error!("Player start_url error: {}", e);
+                                tracing::error!("Player preview error: {}", e);
                                 state.notify(format!("Audio error: {}", e));
                             }
                         }

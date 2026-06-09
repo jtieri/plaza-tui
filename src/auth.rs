@@ -2,6 +2,7 @@ use crate::api::ApiClient;
 use crate::api::models::{LoginForm, LoginResponse};
 use crate::error::{AuthError, PlazaError, Result};
 use keyring::Entry;
+use std::path::PathBuf;
 
 const KEYRING_SERVICE: &str = "plaza-tui";
 const KEYRING_ACCOUNT: &str = "auth-token";
@@ -47,24 +48,42 @@ pub async fn logout(client: &ApiClient) -> Result<()> {
 }
 
 pub fn save_token(token: &str) {
+    // Save to keyring
     match Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {
         Ok(entry) => {
-            if let Err(e) = entry.set_password(token) {
-                tracing::warn!("Failed to save token to keyring: {}", e);
+            match entry.set_password(token) {
+                Ok(()) => tracing::debug!("Token saved to keyring"),
+                Err(e) => tracing::warn!("Failed to save token to keyring: {}", e),
             }
         }
-        Err(e) => {
-            tracing::warn!("Failed to access keyring: {}", e);
-        }
+        Err(e) => tracing::warn!("Failed to access keyring: {}", e),
     }
+
+    // Always save to file as well, since keyring may not persist
+    save_token_file(token);
 }
 
 pub fn load_token() -> Option<String> {
-    let entry = Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT).ok()?;
-    entry.get_password().ok()
+    // Try keyring first
+    match Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {
+        Ok(entry) => {
+            match entry.get_password() {
+                Ok(token) => {
+                    tracing::debug!("Token loaded from keyring");
+                    return Some(token);
+                }
+                Err(e) => tracing::debug!("Keyring load failed: {}", e),
+            }
+        }
+        Err(e) => tracing::debug!("Keyring access failed: {}", e),
+    }
+
+    // Fall back to file
+    load_token_file()
 }
 
 pub fn delete_token() {
+    // Delete from keyring
     match Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {
         Ok(entry) => {
             if let Err(e) = entry.delete_credential() {
@@ -74,5 +93,61 @@ pub fn delete_token() {
         Err(e) => {
             tracing::warn!("Failed to access keyring for deletion: {}", e);
         }
+    }
+
+    // Also delete file fallback
+    let path = token_file_path();
+    if path.exists() {
+        if let Err(e) = std::fs::remove_file(&path) {
+            tracing::warn!("Failed to delete token file: {}", e);
+        }
+    }
+}
+
+// --- File-based fallback ---
+
+fn token_file_path() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("plaza-tui")
+        .join(".token")
+}
+
+fn save_token_file(token: &str) {
+    let path = token_file_path();
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            tracing::warn!("Failed to create token dir: {}", e);
+            return;
+        }
+    }
+
+    match std::fs::write(&path, token) {
+        Ok(()) => {
+            // Restrict file permissions on Unix
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+            }
+            tracing::debug!("Token saved to file fallback");
+        }
+        Err(e) => tracing::warn!("Failed to save token file: {}", e),
+    }
+}
+
+fn load_token_file() -> Option<String> {
+    let path = token_file_path();
+    match std::fs::read_to_string(&path) {
+        Ok(token) => {
+            let token = token.trim().to_string();
+            if token.is_empty() {
+                None
+            } else {
+                tracing::debug!("Token loaded from file fallback");
+                Some(token)
+            }
+        }
+        Err(_) => None,
     }
 }
