@@ -28,6 +28,7 @@ pub mod hls;
 pub mod pcm;
 pub mod player;
 pub mod quality;
+pub mod recording;
 pub mod sources;
 pub mod ts;
 

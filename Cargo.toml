@@ -40,6 +40,7 @@ symphonia = { version = "0.5", features = ["aac", "mp3", "ogg", "isomp4"] }
 rodio = { version = "0.19", default-features = false, features = ["symphonia-all"] }
 opus = "0.3"
 m3u8-rs = "6"
+flacenc = "0.5"
 
 # TUI
 ratatui = "0.30"
