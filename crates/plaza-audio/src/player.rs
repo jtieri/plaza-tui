@@ -1,20 +1,26 @@
 //! Audio playback engine.
 //!
 //! [`Player`] owns the rodio output and a dedicated decode thread. The thread runs
-//! a codec-agnostic loop ([`audio_loop_core`]) that pulls PCM from a [`PcmSource`]
-//! (MP3, Opus, or HLS/AAC — see [`crate::audio::sources`]) and feeds it to the
-//! sink with batching + backpressure. Reconnect policy lives here; decoding lives
-//! in the sources.
+//! a codec-agnostic loop that pulls PCM from a [`PcmSource`] (MP3, Opus, or
+//! HLS/AAC — see [`crate::sources`]) and feeds it to the sink with batching and
+//! backpressure. Reconnect policy lives here; decoding lives in the sources.
 
-use rodio::{buffer::SamplesBuffer, OutputStream, OutputStreamHandle, Sink};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::audio::pcm::{PcmChunk, PcmError, PcmSource};
-use crate::audio::sources::{build_live_source, build_preview_source};
-use crate::config::StreamQuality;
-use crate::error::{AudioError, PlazaError, Result};
+use rodio::buffer::SamplesBuffer;
+use rodio::{OutputStream, OutputStreamHandle, Sink};
+
+use crate::error::{Error, Result};
+use crate::pcm::{PcmChunk, PcmError, PcmSource};
+use crate::quality::StreamQuality;
+use crate::sources::{build_live_source, build_preview_source};
+
+/// A callback the audio thread invokes with a human-readable message when playback
+/// fails in a way it cannot recover from. The binary adapts this to its own event
+/// channel, keeping the audio engine free of any async-runtime dependency.
+pub type ErrorReporter = Arc<dyn Fn(String) + Send + Sync>;
 
 /// Whether a playback session is finite (a downloaded preview) or infinite
 /// (a live radio stream that should be reconnected on a transient end).
@@ -30,8 +36,7 @@ pub struct Player {
     stream_handle: Option<OutputStreamHandle>,
     task_handle: Option<std::thread::JoinHandle<()>>,
     cmd_tx: Option<std::sync::mpsc::SyncSender<PlayerCommand>>,
-    /// Reports unrecoverable audio failures (e.g. an undecodable codec) to the UI.
-    error_tx: Option<tokio::sync::mpsc::Sender<String>>,
+    error_report: Option<ErrorReporter>,
     volume: f32,
     is_playing: bool,
 }
@@ -46,8 +51,8 @@ enum PlayerCommand {
 
 impl Player {
     pub fn new() -> Result<Self> {
-        let (stream, stream_handle) = OutputStream::try_default()
-            .map_err(|e| PlazaError::Audio(AudioError::OutputInit(e.to_string())))?;
+        let (stream, stream_handle) =
+            OutputStream::try_default().map_err(|e| Error::Output(e.to_string()))?;
 
         Ok(Player {
             sink: Arc::new(Mutex::new(None)),
@@ -55,16 +60,19 @@ impl Player {
             stream_handle: Some(stream_handle),
             task_handle: None,
             cmd_tx: None,
-            error_tx: None,
+            error_report: None,
             volume: 0.8,
             is_playing: false,
         })
     }
 
-    /// Provide a channel on which the audio thread reports unrecoverable failures
-    /// (e.g. an undecodable codec) so the UI can show them instead of silently retrying.
-    pub fn set_error_sender(&mut self, tx: tokio::sync::mpsc::Sender<String>) {
-        self.error_tx = Some(tx);
+    /// Register a callback for unrecoverable playback failures (e.g. an undecodable
+    /// codec). It is invoked from the audio thread, so it must be `Send + Sync`.
+    pub fn on_error<F>(&mut self, report: F)
+    where
+        F: Fn(String) + Send + Sync + 'static,
+    {
+        self.error_report = Some(Arc::new(report));
     }
 
     /// Play a live radio stream of the given quality. Reconnects on transient ends.
@@ -86,12 +94,12 @@ impl Player {
         // Stop any existing playback first.
         self.stop_inner();
 
-        let stream_handle = self.stream_handle.as_ref().ok_or_else(|| {
-            PlazaError::Audio(AudioError::OutputInit("No stream handle".to_string()))
-        })?;
+        let stream_handle = self
+            .stream_handle
+            .as_ref()
+            .ok_or_else(|| Error::Output("No stream handle".to_string()))?;
 
-        let sink = Sink::try_new(stream_handle)
-            .map_err(|e| PlazaError::Audio(AudioError::OutputInit(e.to_string())))?;
+        let sink = Sink::try_new(stream_handle).map_err(|e| Error::Output(e.to_string()))?;
         sink.set_volume(self.volume);
 
         let sink_arc = Arc::clone(&self.sink);
@@ -101,14 +109,14 @@ impl Player {
         // Bounded channel so Stop is delivered promptly.
         let (cmd_tx, cmd_rx) = std::sync::mpsc::sync_channel::<PlayerCommand>(8);
         self.cmd_tx = Some(cmd_tx);
-        let error_tx = self.error_tx.clone();
+        let error_report = self.error_report.clone();
 
         let handle = std::thread::Builder::new()
             .name("plaza-audio".to_string())
             .spawn(move || {
-                run_audio_loop(factory, sink_for_thread, cmd_rx, mode, error_tx);
+                run_audio_loop(factory, sink_for_thread, cmd_rx, mode, error_report);
             })
-            .map_err(|e| PlazaError::Audio(AudioError::OutputInit(e.to_string())))?;
+            .map_err(|e| Error::Output(e.to_string()))?;
 
         self.task_handle = Some(handle);
         self.is_playing = true;
@@ -188,11 +196,11 @@ fn run_audio_loop<F>(
     sink_arc: Arc<Mutex<Option<Sink>>>,
     cmd_rx: Receiver<PlayerCommand>,
     mode: StreamMode,
-    error_tx: Option<tokio::sync::mpsc::Sender<String>>,
+    error_report: Option<ErrorReporter>,
 ) where
     F: FnMut() -> std::result::Result<Box<dyn PcmSource>, PcmError>,
 {
-    audio_loop_core(factory, sink_arc, cmd_rx, mode, error_tx);
+    audio_loop_core(factory, sink_arc, cmd_rx, mode, error_report);
 }
 
 /// The reconnect/playback loop, generic over the source factory so the retry
@@ -202,14 +210,14 @@ fn audio_loop_core<F>(
     sink_arc: Arc<Mutex<Option<Sink>>>,
     cmd_rx: Receiver<PlayerCommand>,
     mode: StreamMode,
-    error_tx: Option<tokio::sync::mpsc::Sender<String>>,
+    error_report: Option<ErrorReporter>,
 ) where
     F: FnMut() -> std::result::Result<Box<dyn PcmSource>, PcmError>,
 {
     let report = |msg: String| {
         tracing::error!("Audio: permanent failure: {msg}");
-        if let Some(tx) = &error_tx {
-            let _ = tx.try_send(msg);
+        if let Some(reporter) = &error_report {
+            reporter(msg);
         }
     };
 
@@ -464,6 +472,14 @@ mod tests {
         Arc::new(Mutex::new(None))
     }
 
+    /// A reporter that records every reported message for later assertion.
+    fn recording_reporter() -> (ErrorReporter, Arc<Mutex<Vec<String>>>) {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&log);
+        let reporter: ErrorReporter = Arc::new(move |msg| sink.lock().unwrap().push(msg));
+        (reporter, log)
+    }
+
     /// Live mode must reconnect when opening the source keeps failing transiently.
     #[test]
     fn live_mode_retries_after_open_failure() {
@@ -517,9 +533,9 @@ mod tests {
             }))
         };
         let (_tx, rx) = sync_channel::<PlayerCommand>(8);
-        let (err_tx, mut err_rx) = tokio::sync::mpsc::channel::<String>(8);
+        let (reporter, log) = recording_reporter();
         let handle = std::thread::spawn(move || {
-            run_audio_loop(factory, no_sink(), rx, StreamMode::Live, Some(err_tx));
+            run_audio_loop(factory, no_sink(), rx, StreamMode::Live, Some(reporter));
         });
         handle.join().unwrap();
         assert_eq!(
@@ -527,7 +543,7 @@ mod tests {
             1,
             "permanent failure must not retry"
         );
-        assert_eq!(err_rx.try_recv().ok().as_deref(), Some("unsupported codec"));
+        assert_eq!(log.lock().unwrap().as_slice(), ["unsupported codec"]);
     }
 
     /// A permanent failure surfaced while *opening* the source must also stop + report.
@@ -540,13 +556,13 @@ mod tests {
             Err(PcmError::Permanent("bad stream".into()))
         };
         let (_tx, rx) = sync_channel::<PlayerCommand>(8);
-        let (err_tx, mut err_rx) = tokio::sync::mpsc::channel::<String>(8);
+        let (reporter, log) = recording_reporter();
         let handle = std::thread::spawn(move || {
-            run_audio_loop(factory, no_sink(), rx, StreamMode::Live, Some(err_tx));
+            run_audio_loop(factory, no_sink(), rx, StreamMode::Live, Some(reporter));
         });
         handle.join().unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(err_rx.try_recv().ok().as_deref(), Some("bad stream"));
+        assert_eq!(log.lock().unwrap().as_slice(), ["bad stream"]);
     }
 
     /// A transient session end in Live mode must reconnect (reopen the source).

@@ -1,9 +1,8 @@
-use crate::api::{
-    models::{DataWrapper, *},
-    ApiClient,
-};
-use crate::error::{ApiError, AuthError, PlazaError, Result};
 use reqwest::Method;
+
+use crate::error::{Error, Result};
+use crate::models::{DataWrapper, *};
+use crate::ApiClient;
 
 impl ApiClient {
     pub async fn get_status(&self) -> Result<StatusResource> {
@@ -48,11 +47,9 @@ impl ApiClient {
         let resp: reqwest::Response = self.auth_request(Method::DELETE, &url).send().await?;
         match resp.status() {
             s if s.is_success() => Ok(()),
-            s if s == 401 => Err(PlazaError::Auth(AuthError::Unauthorized)),
-            s if s == 404 => Err(PlazaError::Api(ApiError::NotFound)),
-            s => Err(PlazaError::Api(ApiError::ServerError {
-                status: s.as_u16(),
-            })),
+            s if s == 401 => Err(Error::Unauthorized),
+            s if s == 404 => Err(Error::NotFound),
+            s => Err(Error::Server { status: s.as_u16() }),
         }
     }
 
@@ -69,11 +66,7 @@ impl ApiClient {
             .get("reactions")
             .and_then(|v| v.as_u64())
             .map(|v| v as u32)
-            .ok_or_else(|| {
-                PlazaError::Api(ApiError::UnexpectedResponse(
-                    "Missing reactions field".to_string(),
-                ))
-            })
+            .ok_or_else(|| Error::Unexpected("missing reactions field".to_string()))
     }
 
     pub async fn get_ratings(
@@ -116,13 +109,11 @@ impl ApiClient {
         resp: reqwest::Response,
     ) -> Result<T> {
         match resp.status() {
-            s if s.is_success() => resp.json::<T>().await.map_err(PlazaError::Http),
-            s if s == 401 => Err(PlazaError::Auth(AuthError::Unauthorized)),
-            s if s == 429 => Err(PlazaError::Api(ApiError::RateLimited)),
-            s if s == 404 => Err(PlazaError::Api(ApiError::NotFound)),
-            s => Err(PlazaError::Api(ApiError::ServerError {
-                status: s.as_u16(),
-            })),
+            s if s.is_success() => resp.json::<T>().await.map_err(Error::Http),
+            s if s == 401 => Err(Error::Unauthorized),
+            s if s == 429 => Err(Error::RateLimited),
+            s if s == 404 => Err(Error::NotFound),
+            s => Err(Error::Server { status: s.as_u16() }),
         }
     }
 }

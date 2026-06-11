@@ -1,4 +1,4 @@
-use plaza_tui::api::models::*;
+use plaza_api::models::*;
 
 #[test]
 fn test_song_deserialize() {

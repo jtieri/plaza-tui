@@ -211,7 +211,7 @@ mod tests {
     /// frames — the first byte of an ADTS frame is the 0xFF sync word.
     #[test]
     fn extracts_adts_from_real_segment() {
-        let seg = include_bytes!("../../tests/fixtures/hls_aac_segment.ts");
+        let seg = include_bytes!("../tests/fixtures/hls_aac_segment.ts");
         assert_eq!(
             seg.len() % TS_PACKET_LEN,
             0,
@@ -237,7 +237,7 @@ mod tests {
     /// The audio PID must be discovered via PAT/PMT (0x100 for this fixture).
     #[test]
     fn discovers_audio_pid_from_psi() {
-        let seg = include_bytes!("../../tests/fixtures/hls_aac_segment.ts");
+        let seg = include_bytes!("../tests/fixtures/hls_aac_segment.ts");
         let mut demux = TsDemux::new();
         demux.push(seg);
         assert_eq!(demux.audio_pid, Some(0x100), "should find AAC PID 0x100");

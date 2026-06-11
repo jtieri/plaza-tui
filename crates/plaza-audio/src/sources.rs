@@ -5,7 +5,7 @@
 //!   Opus packets which libopus (the `opus` crate) decodes. symphonia has no Opus
 //!   decoder, but its Ogg reader still maps Opus logical streams.
 //!
-//! HLS/AAC lives in [`crate::audio::hls`] because it needs playlist + TS demuxing.
+//! HLS/AAC lives in [`crate::hls`] because it needs playlist + TS demuxing.
 
 use std::io::{self, Read, Seek, SeekFrom};
 
@@ -17,9 +17,9 @@ use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-use crate::audio::hls::HlsAacPcmSource;
-use crate::audio::pcm::{PcmChunk, PcmError, PcmSource};
-use crate::config::StreamQuality;
+use crate::hls::HlsAacPcmSource;
+use crate::pcm::{PcmChunk, PcmError, PcmSource};
+use crate::quality::StreamQuality;
 
 /// Build the live [`PcmSource`] for a stream quality, opening the network
 /// connection. A failure to open is returned as [`PcmError`] so the player can

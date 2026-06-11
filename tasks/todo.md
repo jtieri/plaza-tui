@@ -69,14 +69,30 @@ song ~20s before the audio actually changed (audio drifting behind the live-edge
 - Tests: 6 `select_window` cases (first-poll start, steady, nothing-new, skip-forward on
   fall-behind, latency-never-exceeds-buffer, empty playlist). Live HLS smoke still 99.9%.
 
-### Phase 2 — Productionize
-- [ ] Kill dead code & clippy warnings (target `clippy -D warnings`); remove unused error variants.
-- [ ] Consistent error surfacing to the UI; no silent failures.
-- [ ] `cargo fmt`, doc comments on public items.
-- [ ] **CI** (GitHub Actions): fmt check, clippy -D warnings, build, test on stable; cache;
-      install C toolchain for libopus vendored build.
-- [ ] Expand tests for regression safety; aim to cover each module.
-- [ ] README: features, install (incl. audio backend notes), keybindings, config, screenshots.
+### Phase 2 — Productionize (in progress; follows ~/development/rust/bobba/docs/style.md)
+Standards: dependency-rule crate boundaries, private-by-default, thiserror per lib crate +
+anyhow in the binary, comments explain *why* (never restate code or narrate history),
+self-documenting code first, four gates green (fmt / clippy -D warnings / test / doc), TDD.
+
+- [x] rustfmt.toml + `cargo fmt`; remove vestigial fallback scaffolding; comment hygiene pass 1.
+- [ ] **Workspace / crate split** (the structural foundation; do first — fixes the §4.4
+      main.rs-redeclares-modules smell and makes lib public APIs legitimately used):
+      ```
+      plaza-tui/ (workspace)
+        crates/plaza-api/    lib — models, REST client, socket, auth; thiserror Error
+        crates/plaza-audio/  lib — StreamQuality, Player, PcmSource, codecs, hls, ts; thiserror Error
+        crates/plaza-tui/    bin — config, app/state, tui (theme/views/layout/widgets/events), wiring, main
+      ```
+      Dependency rule: api ⟂ audio (no cross-dep); bin → {api, audio}. Frameworks (ratatui,
+      symphonia, reqwest) stay at the edges. Split error.rs accordingly; `[workspace.dependencies]`.
+- [ ] Clippy `-D warnings` clean across all crates; remove remaining dead code (judged per crate).
+- [ ] Doc comments on every public item; crate-level `//!` docs with an example; `cargo doc` clean.
+      Add curated lints (`missing_docs` on libs; review `clippy::pedantic`).
+- [ ] **CI** (GitHub Actions): the four gates on stable across ubuntu/macos/windows; cargo cache;
+      cmake + C compiler are preinstalled on runners (libopus vendored build needs them).
+- [ ] **`justfile`**: `build`, `test`, `lint`, `fmt`, `ci`, `run`, `release` — push-button locally.
+- [ ] Expand tests (TDD): api client (wiremock), config round-trips, more codec/demux cases.
+- [ ] README: features, install (audio/build notes), keybindings, config, screenshots.
 
 ### Phase 3 — Beyond parity (after parity lands; scope per user)
 - [ ] Remaining API parity: favorites **export**, register, profile edit / password / delete,

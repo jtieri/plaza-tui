@@ -1,4 +1,5 @@
-use plaza_tui::config::{Config, StreamQuality};
+use plaza_audio::StreamQuality;
+use plaza_tui::config::Config;
 use tempfile::TempDir;
 
 fn write_config_to(dir: &TempDir, config: &Config) {
@@ -74,7 +75,7 @@ fn test_config_serialize_deserialize_all_qualities() {
         StreamQuality::Mp3Low,
     ] {
         let config = Config {
-            stream_quality: quality.clone(),
+            stream_quality: quality,
             volume: 0.5,
             image_protocol: None,
         };

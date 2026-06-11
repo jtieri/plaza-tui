@@ -3,7 +3,7 @@
 //! Plaza's `/hls` endpoint is a master playlist pointing at three AAC bitrate
 //! variants, each a sliding-window media playlist of MPEG-TS segments. This source
 //! polls the chosen variant's media playlist, fetches new segments, demuxes the
-//! AAC elementary stream out of the TS container ([`crate::audio::ts`]), and
+//! AAC elementary stream out of the TS container ([`crate::ts`]), and
 //! decodes it to PCM with symphonia.
 //!
 //! ## Threading and latency
@@ -14,8 +14,8 @@
 //! player's audio thread starves the sink during each refill, causing audible
 //! drop-outs.
 //!
-//! Latency is bounded by [`select_window`]: we start near the live edge and, if we
-//! ever fall more than [`BUFFER_SEGMENTS`] behind it (e.g. after a network stall),
+//! Latency is bounded by `select_window`: we start near the live edge and, if we
+//! ever fall more than `BUFFER_SEGMENTS` behind it (e.g. after a network stall),
 //! we **skip forward** instead of playing every buffered segment in order. Without
 //! this, audio drifts further and further behind the socket "now playing" metadata
 //! (which is always at the live edge) — the drift never recovers.
@@ -34,9 +34,9 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-use crate::audio::pcm::{PcmChunk, PcmError, PcmSource};
-use crate::audio::sources::first_audio_track;
-use crate::audio::ts::TsDemux;
+use crate::pcm::{PcmChunk, PcmError, PcmSource};
+use crate::sources::first_audio_track;
+use crate::ts::TsDemux;
 
 /// How far behind the live edge we keep buffered, in segments. Plaza segments are
 /// ~4s, so 2 ≈ 8s of latency — enough to ride out jitter without the large drift
@@ -477,7 +477,7 @@ mod tests {
     /// decodes it to non-silent PCM — the full HLS decode chain minus networking.
     #[test]
     fn decodes_real_segment_fixture_to_audio() {
-        let seg = include_bytes!("../../tests/fixtures/hls_aac_segment.ts");
+        let seg = include_bytes!("../tests/fixtures/hls_aac_segment.ts");
         let mut demux = TsDemux::new();
         demux.push(seg);
         let adts = demux.take();

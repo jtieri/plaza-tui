@@ -1,8 +1,16 @@
-use crate::api::models::{LoginForm, LoginResponse};
-use crate::api::ApiClient;
-use crate::error::{AuthError, PlazaError, Result};
-use keyring::Entry;
+//! Login and bearer-token persistence.
+//!
+//! The token is stored in the OS keyring when available, and mirrored to a
+//! permission-restricted file so a session survives even where the keyring does
+//! not persist between runs.
+
 use std::path::PathBuf;
+
+use keyring::Entry;
+
+use crate::error::{Error, Result};
+use crate::models::{LoginForm, LoginResponse};
+use crate::ApiClient;
 
 const KEYRING_SERVICE: &str = "plaza-tui";
 const KEYRING_ACCOUNT: &str = "auth-token";
@@ -22,13 +30,8 @@ pub async fn login(client: &ApiClient, username: &str, password: &str) -> Result
             let login_resp: LoginResponse = response.json().await?;
             Ok(login_resp.token)
         }
-        s if s == 401 => Err(PlazaError::Auth(AuthError::Unauthorized)),
-        s => {
-            let _body: String = response.text().await.unwrap_or_default();
-            Err(PlazaError::Api(crate::error::ApiError::ServerError {
-                status: s.as_u16(),
-            }))
-        }
+        s if s == 401 => Err(Error::Unauthorized),
+        s => Err(Error::Server { status: s.as_u16() }),
     }
 }
 

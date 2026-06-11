@@ -1,19 +1,19 @@
-use crate::{
-    api::{models::*, ApiClient},
-    audio, auth,
-    config::Config,
-    socket::SocketClient,
-    tui::{
-        self,
-        events::{AppEvent, EventHandler},
-        layout::AppLayout,
-        views::View,
-    },
-};
-use image::DynamicImage;
-use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::time::{Duration, Instant};
+
+use image::DynamicImage;
+use ratatui_image::picker::Picker;
+use ratatui_image::protocol::StatefulProtocol;
 use tokio::sync::mpsc;
+
+use plaza_api::models::*;
+use plaza_api::{auth, ApiClient, SocketClient, SocketEvent};
+use plaza_audio::Player;
+
+use crate::config::Config;
+use crate::tui::events::{AppEvent, EventHandler};
+use crate::tui::layout::AppLayout;
+use crate::tui::views::View;
+use crate::tui::{self};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionStatus {
@@ -172,7 +172,7 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
     let (artwork_img_tx, mut artwork_img_rx) = mpsc::channel::<DynamicImage>(2);
 
     // Audio player (non-fatal — app functions without audio output device)
-    let mut player: Option<audio::Player> = match audio::Player::new() {
+    let mut player: Option<Player> = match Player::new() {
         Ok(p) => {
             tracing::info!("Audio player initialized");
             Some(p)
@@ -187,13 +187,16 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
     // undecodable codec) here so the UI can surface them instead of silently retrying.
     let (audio_error_tx, audio_error_rx) = mpsc::channel::<String>(8);
     if let Some(p) = &mut player {
-        p.set_error_sender(audio_error_tx.clone());
+        let tx = audio_error_tx.clone();
+        p.on_error(move |msg| {
+            let _ = tx.try_send(msg);
+        });
     }
     let _audio_error_tx = audio_error_tx; // keep alive so channel never auto-closes
 
     // Socket client (non-fatal)
     let socket = SocketClient::connect().await.ok();
-    let (dummy_tx, _) = tokio::sync::broadcast::channel::<crate::socket::SocketEvent>(1);
+    let (dummy_tx, _) = tokio::sync::broadcast::channel::<SocketEvent>(1);
     let socket_rx = match &socket {
         Some(s) => {
             tracing::info!("Socket.io client connected");
@@ -208,7 +211,7 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
     let mut event_handler = EventHandler::new(socket_rx, audio_error_rx);
     let mut state = AppState::new(&config);
 
-    let stream_quality = config.stream_quality.clone();
+    let stream_quality = config.stream_quality;
     let stream_url = stream_quality.stream_url().to_string();
     tracing::info!("Active stream: {} ({})", stream_quality.label(), stream_url);
 
@@ -409,7 +412,7 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
                             stream_quality.label(),
                             stream_url
                         );
-                        match p.start_live(stream_quality.clone()) {
+                        match p.start_live(stream_quality) {
                             Ok(()) => {
                                 state.is_playing = true;
                                 tracing::info!("Audio playback started");
@@ -1071,21 +1074,18 @@ async fn handle_profile_key(
 ) {
     use crossterm::event::KeyCode;
 
-    match key.code {
-        KeyCode::Char('L') => {
-            tracing::info!("User logging out");
-            auth::delete_token();
-            state.user = None;
-            state.user_stats = None;
-            state.now_playing = None;
-            state.history.items.clear();
-            state.favorites.items.clear();
-            state.is_authenticated = false;
-            state.is_playing = false;
-            state.view = View::Login;
-            state.notify("Logged out");
-        }
-        _ => {}
+    if key.code == KeyCode::Char('L') {
+        tracing::info!("User logging out");
+        auth::delete_token();
+        state.user = None;
+        state.user_stats = None;
+        state.now_playing = None;
+        state.history.items.clear();
+        state.favorites.items.clear();
+        state.is_authenticated = false;
+        state.is_playing = false;
+        state.view = View::Login;
+        state.notify("Logged out");
     }
 }
 

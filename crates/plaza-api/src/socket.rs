@@ -1,18 +1,33 @@
-use rust_socketio::{
-    asynchronous::{Client, ClientBuilder},
-    Payload,
-};
+//! Real-time updates over Socket.IO.
+//!
+//! [`SocketClient::connect`] spawns a background task that maintains the connection
+//! (reconnecting with exponential backoff) and broadcasts [`SocketEvent`]s to any
+//! number of subscribers.
+
 use std::time::Duration;
+
+use rust_socketio::asynchronous::{Client, ClientBuilder};
+use rust_socketio::Payload;
 use tokio::sync::broadcast;
 
-use crate::api::models::StatusResource;
+use crate::models::StatusResource;
 
+/// A real-time update from the Plaza broadcast.
+//
+// `Status` is far larger than the other variants, but it's also by far the most
+// common, so the unused padding clippy warns about is rarely actually unused.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum SocketEvent {
+    /// The now-playing song and its metadata changed.
     Status(StatusResource),
+    /// The live listener count changed.
     Listeners(u32),
+    /// The reaction total for the current song changed.
     Reactions(u32),
+    /// The connection dropped.
     Disconnected,
+    /// The connection was (re-)established.
     Reconnected,
 }
 
@@ -102,7 +117,6 @@ impl SocketClient {
 
                 match result {
                     Ok(_client) => {
-                        backoff_secs = 1;
                         tracing::info!("Socket.io connection established");
                         // Keep the spawned task (and therefore the client) alive.
                         // The client runs its event loop internally; parking here
@@ -124,13 +138,9 @@ impl SocketClient {
         Ok(SocketClient { sender })
     }
 
-    /// Subscribe to socket events.
+    /// Subscribe to the broadcast of real-time events. Each subscriber receives
+    /// every event sent after it subscribes.
     pub fn subscribe(&self) -> broadcast::Receiver<SocketEvent> {
         self.sender.subscribe()
-    }
-
-    /// Clone the underlying sender (for forwarding events elsewhere).
-    pub fn sender(&self) -> broadcast::Sender<SocketEvent> {
-        self.sender.clone()
     }
 }

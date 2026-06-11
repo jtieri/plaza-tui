@@ -1,4 +1,5 @@
-use crate::api::models::RatingRange;
+use plaza_api::models::RatingRange;
+
 use crate::app::AppState;
 use crate::theme::Theme;
 use crate::tui::widgets::vaporwave_block;

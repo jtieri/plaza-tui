@@ -100,7 +100,7 @@ fn decode_pcm_stats(bytes: Vec<u8>, mime: &str) -> (usize, usize) {
 //     player uses, against the live endpoints. These are the real end-to-end proof
 //     that each codec path works. ---
 
-use plaza_tui::audio::pcm::PcmSource;
+use plaza_audio::pcm::PcmSource;
 
 /// Pull up to `max_chunks` decoded chunks from a live source, tolerating the
 /// `Ok(None)` (live-edge wait) that HLS returns. Returns (total, nonzero) samples.
@@ -146,10 +146,8 @@ fn assert_audible(label: &str, total: usize, nonzero: usize) {
 #[test]
 #[ignore = "network: exercises SymphoniaPcmSource against live /mp3"]
 fn test_mp3_source_decodes() {
-    use plaza_tui::audio::sources::SymphoniaPcmSource;
-    let url = plaza_tui::config::StreamQuality::Mp3
-        .stream_url()
-        .to_string();
+    use plaza_audio::sources::SymphoniaPcmSource;
+    let url = plaza_audio::StreamQuality::Mp3.stream_url().to_string();
     let source = SymphoniaPcmSource::open(url, "audio/mpeg").expect("open mp3 source");
     let (t, nz) = drain_source(Box::new(source), 400);
     assert_audible("MP3 source", t, nz);
@@ -158,10 +156,8 @@ fn test_mp3_source_decodes() {
 #[test]
 #[ignore = "network: exercises OpusPcmSource against live /ogg"]
 fn test_opus_source_decodes() {
-    use plaza_tui::audio::sources::OpusPcmSource;
-    let url = plaza_tui::config::StreamQuality::Ogg
-        .stream_url()
-        .to_string();
+    use plaza_audio::sources::OpusPcmSource;
+    let url = plaza_audio::StreamQuality::Ogg.stream_url().to_string();
     let source = OpusPcmSource::open(url).expect("open opus source");
     let (t, nz) = drain_source(Box::new(source), 400);
     assert_audible("Opus source", t, nz);
@@ -170,10 +166,8 @@ fn test_opus_source_decodes() {
 #[test]
 #[ignore = "network: exercises HlsAacPcmSource against live /hls"]
 fn test_hls_source_decodes() {
-    use plaza_tui::audio::hls::HlsAacPcmSource;
-    let url = plaza_tui::config::StreamQuality::Hls
-        .stream_url()
-        .to_string();
+    use plaza_audio::hls::HlsAacPcmSource;
+    let url = plaza_audio::StreamQuality::Hls.stream_url().to_string();
     let source = HlsAacPcmSource::open(url).expect("open hls source");
     let (t, nz) = drain_source(Box::new(source), 400);
     assert_audible("HLS source", t, nz);
@@ -182,7 +176,7 @@ fn test_hls_source_decodes() {
 #[test]
 #[ignore = "network: hits live radio.plaza.one"]
 fn test_mp3_stream_decodes_to_audio() {
-    let url = plaza_tui::config::StreamQuality::Mp3.stream_url();
+    let url = plaza_audio::StreamQuality::Mp3.stream_url();
     let bytes = fetch_bytes(url, 256 * 1024);
     assert!(
         bytes.len() > 32 * 1024,
@@ -208,7 +202,7 @@ fn test_ogg_opus_decodes_with_libopus() {
     // raw Opus packets, and the `opus` crate (libopus) decodes them to PCM.
     use opus::{Channels, Decoder as OpusDecoder};
 
-    let url = plaza_tui::config::StreamQuality::Ogg.stream_url();
+    let url = plaza_audio::StreamQuality::Ogg.stream_url();
     let bytes = fetch_bytes(url, 256 * 1024);
     let mss = MediaSourceStream::new(Box::new(std::io::Cursor::new(bytes)), Default::default());
     let mut hint = Hint::new();
@@ -274,7 +268,7 @@ fn test_ogg_opus_decodes_with_libopus() {
 fn test_ogg_stream_is_opus_and_currently_undecodable() {
     // Documents WHY audio broke: /ogg is now Opus, which symphonia can't decode.
     // When Phase 1 adds Opus support this test should be replaced with a decode check.
-    let url = plaza_tui::config::StreamQuality::Ogg.stream_url();
+    let url = plaza_audio::StreamQuality::Ogg.stream_url();
     let bytes = fetch_bytes(url, 128 * 1024);
     let mss = MediaSourceStream::new(Box::new(std::io::Cursor::new(bytes)), Default::default());
     let mut hint = Hint::new();

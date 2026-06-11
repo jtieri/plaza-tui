@@ -1,21 +1,38 @@
-use crate::api::models::StatusResource;
-use crate::socket::SocketEvent;
+use std::time::Duration;
+
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures_util::StreamExt;
-use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::interval;
 
+use plaza_api::models::StatusResource;
+use plaza_api::SocketEvent;
+
+/// A single thing for the run loop to react to, merged from all input sources.
+//
+// `StatusUpdate` is larger than the rest, but events are handled one at a time
+// rather than stored in bulk, so boxing it would only add an allocation per song
+// change for no real saving.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum AppEvent {
+    /// A key was pressed.
     Key(KeyEvent),
-    Resize(u16, u16),
+    /// The terminal was resized; the next draw re-fits automatically.
+    Resize,
+    /// The periodic timer fired (drives redraws and position tracking).
     Tick,
+    /// Text was pasted into the terminal.
     Paste(String),
+    /// The now-playing song changed.
     StatusUpdate(StatusResource),
+    /// The live listener count changed.
     ListenersUpdate(u32),
+    /// The reaction total changed.
     ReactionsUpdate(u32),
+    /// The audio engine reported an unrecoverable error.
     AudioError(String),
+    /// The user asked to quit.
     Quit,
 }
 
@@ -57,7 +74,7 @@ impl EventHandler {
                         }
                     }
                     Some(Ok(Event::Paste(text))) => AppEvent::Paste(text),
-                    Some(Ok(Event::Resize(w, h))) => AppEvent::Resize(w, h),
+                    Some(Ok(Event::Resize(_, _))) => AppEvent::Resize,
                     _ => AppEvent::Tick,
                 }
             }
