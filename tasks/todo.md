@@ -78,24 +78,16 @@ self-documenting code first, four gates green (fmt / clippy -D warnings / test /
 - [x] **Workspace / crate split** — plaza-api + plaza-audio (libs, thiserror) + plaza-tui (bin,
       anyhow). Per-crate errors; audio decoupled from tokio via an ErrorReporter callback;
       `[workspace.dependencies]`. All four gates green (fmt/clippy -D warnings/test/doc).
-- [ ] ~~Workspace / crate split~~ (the structural foundation; do first — fixes the §4.4
-      main.rs-redeclares-modules smell and makes lib public APIs legitimately used):
-      ```
-      plaza-tui/ (workspace)
-        crates/plaza-api/    lib — models, REST client, socket, auth; thiserror Error
-        crates/plaza-audio/  lib — StreamQuality, Player, PcmSource, codecs, hls, ts; thiserror Error
-        crates/plaza-tui/    bin — config, app/state, tui (theme/views/layout/widgets/events), wiring, main
-      ```
-      Dependency rule: api ⟂ audio (no cross-dep); bin → {api, audio}. Frameworks (ratatui,
-      symphonia, reqwest) stay at the edges. Split error.rs accordingly; `[workspace.dependencies]`.
-- [ ] Clippy `-D warnings` clean across all crates; remove remaining dead code (judged per crate).
-- [ ] Doc comments on every public item; crate-level `//!` docs with an example; `cargo doc` clean.
-      Add curated lints (`missing_docs` on libs; review `clippy::pedantic`).
-- [ ] **CI** (GitHub Actions): the four gates on stable across ubuntu/macos/windows; cargo cache;
-      cmake + C compiler are preinstalled on runners (libopus vendored build needs them).
-- [ ] **`justfile`**: `build`, `test`, `lint`, `fmt`, `ci`, `run`, `release` — push-button locally.
-- [ ] Expand tests (TDD): api client (wiremock), config round-trips, more codec/demux cases.
-- [ ] README: features, install (audio/build notes), keybindings, config, screenshots.
+- [x] Clippy `-D warnings` clean across all crates; dead code removed/justified.
+- [x] Doc comments on every public item; crate-level `//!` docs with examples; `cargo doc` clean;
+      `#![warn(missing_docs)]` on both libraries.
+- [x] **CI** (GitHub Actions): the four gates on stable across ubuntu/macos/windows; cargo cache;
+      ALSA headers installed on Linux (cmake + C compiler preinstalled for the libopus build).
+- [x] **`justfile`**: fmt/lint/test/doc/ci/run/release/smoke — push-button locally.
+- [x] Expand tests: API client via wiremock (path/auth/parse/error-mapping). 50 tests total.
+- [x] README rewritten for the workspace; MIT + Apache-2.0 license files added.
+
+Phase 2 complete. Four gates green: fmt, clippy -D warnings, 44 tests (+6 ignored), doc.
 
 ### Phase 3 — Beyond parity (after parity lands; scope per user)
 - [ ] Remaining API parity: favorites **export**, register, profile edit / password / delete,
