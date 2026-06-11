@@ -81,6 +81,24 @@ async fn add_favorite_posts_song_id_and_returns_entry() {
 }
 
 #[tokio::test]
+async fn export_favorites_returns_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v2/users/me/favorites/export"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "link": "https://x/export.zip" })),
+        )
+        .mount(&server)
+        .await;
+
+    let client = ApiClient::new(Some("t".to_string())).with_base_url(&server.uri());
+    assert_eq!(
+        client.export_favorites().await.unwrap(),
+        "https://x/export.zip"
+    );
+}
+
+#[tokio::test]
 async fn send_reaction_returns_updated_total() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

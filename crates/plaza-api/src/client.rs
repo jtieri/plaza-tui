@@ -66,6 +66,18 @@ impl ApiClient {
         }
     }
 
+    /// Request an export of the signed-in user's favourites, returning a download link.
+    pub async fn export_favorites(&self) -> Result<String> {
+        let url = self.url("v2/users/me/favorites/export");
+        let resp = self.auth_request(Method::POST, &url).send().await?;
+        let value: serde_json::Value = self.handle_response(resp).await?;
+        value
+            .get("link")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| Error::Unexpected("missing export link".to_string()))
+    }
+
     /// Send a reaction for the current song, returning the new reaction total.
     pub async fn send_reaction(&self, reaction: u8) -> Result<u32> {
         let url = self.url("v2/reactions");

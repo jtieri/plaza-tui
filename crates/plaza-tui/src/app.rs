@@ -1091,6 +1091,17 @@ async fn handle_list_key(
                 Err(e) => state.notify(format!("Error: {}", e)),
             }
         }
+        KeyCode::Char('e') if view_name == "favorites" => {
+            if state.is_authenticated {
+                tracing::info!("Exporting favorites");
+                match api.export_favorites().await {
+                    Ok(link) => state.notify(format!("Export ready: {link}")),
+                    Err(e) => state.notify(format!("Export failed: {e}")),
+                }
+            } else {
+                state.notify("Login required to export favorites");
+            }
+        }
         KeyCode::Char('h') | KeyCode::Left if view_name == "charts" => {
             state.chart_range = match state.chart_range {
                 RatingRange::Overtime => RatingRange::Monthly,
