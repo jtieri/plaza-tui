@@ -1,6 +1,8 @@
 # Plaza TUI
 
-A terminal UI client for [Nightwave Plaza](https://plaza.one/) — the vaporwave internet radio station. Listen to live radio, browse song history, manage favorites, react to tracks, and check the charts — all from your terminal with a full vaporwave aesthetic.
+A terminal client for [Nightwave Plaza](https://plaza.one/), the vaporwave internet radio
+station. Listen to the live stream, browse history, manage favorites, react to tracks, and
+read the charts — all from your terminal, in full vaporwave color.
 
 ```
 ╔══════════════════════════════════════════════════════╗
@@ -22,129 +24,119 @@ A terminal UI client for [Nightwave Plaza](https://plaza.one/) — the vaporwave
 
 ## Features
 
-- **Live Audio Playback** — Pure Rust HLS stream via symphonia + rodio (no system audio deps)
-- **Real-time Updates** — Socket.io connection for instant song change notifications
-- **Song History** — Paginated scrollable history of recently played tracks
-- **Favorites** — Add/remove favorites, synced with your Plaza account
-- **Charts** — Overtime, weekly, and monthly song ratings
-- **News** — Station news and announcements
-- **Profile** — User stats (reactions sent, total favorites)
-- **Vaporwave Aesthetic** — Hot pink, cyan, purple on dark navy
-- **Secure Auth** — Tokens stored in your OS keyring (libsecret/Keychain/Windows Credential Manager)
+- **Every Plaza stream format** — MP3, Opus, and adaptive HLS/AAC, all decoded in-process.
+- **Real-time updates** — a Socket.IO connection reflects song changes, listener counts, and
+  reactions live, reconnecting automatically.
+- **History, favorites, charts, news** — browse and paginate everything Plaza exposes.
+- **Account features** — log in to favorite tracks, send reactions, and view your stats.
+- **Album art in the terminal** — sixel, kitty, and iTerm2 image protocols, with a graceful
+  fallback.
+- **Secure auth** — tokens are kept in the OS keyring, with an encrypted-at-rest file fallback.
 
-## Installation
+## Install
 
 ### Prerequisites
 
-- Rust toolchain (1.70+): https://rustup.rs
+- A Rust toolchain, 1.85 or newer ([rustup.rs](https://rustup.rs)).
+- A C compiler and **CMake** — the Opus decoder builds libopus from source, so released
+  binaries need no system audio library at runtime.
+- **Linux only:** ALSA development headers (`libasound2-dev` on Debian/Ubuntu,
+  `alsa-lib` on Arch) for audio output.
 
-### Build from source
+### From source
 
 ```bash
-git clone https://github.com/example/plaza-tui
+git clone https://github.com/jtieri/plaza-tui
 cd plaza-tui
-cargo build --release
-# Binary at: target/release/plaza-tui
-```
-
-### Install
-
-```bash
-cargo install --path .
+cargo install --path crates/plaza-tui
+# or: cargo build --release   →   target/release/plaza-tui
 ```
 
 ## Usage
 
 ```bash
-# Launch the app
-plaza-tui
-
-# Use a specific stream quality
-plaza-tui --stream-quality ogg
-
-# Clear saved login token
-plaza-tui --reset-auth
-
-# Verbose logging
-plaza-tui --log-level debug
+plaza-tui                          # launch
+plaza-tui --stream-quality ogg     # pick a stream (see below)
+plaza-tui --reset-auth             # forget the saved login token
+plaza-tui --log-level debug        # more verbose file logging
 ```
 
-### Stream quality options
+### Stream qualities
 
-| Flag | Stream |
-|------|--------|
-| `hls` (default) | HLS adaptive stream |
-| `ogg` | Ogg Vorbis high quality |
-| `ogg-low` | Ogg Vorbis low quality |
-| `mp3` | MP3 high quality |
-| `mp3-low` | MP3 low quality |
+Pass `--stream-quality <name>`, or set it in the config file. MP3 is the default — it plays
+everywhere with no extra setup.
 
-## Keyboard Shortcuts
+| Name | Codec | Bitrate |
+|------|-------|---------|
+| `mp3` (default) | MP3 | 128 kbps |
+| `mp3-low` | MP3 | 96 kbps |
+| `ogg` | Opus | 64 kbps |
+| `ogg-low` | Opus | 96 kbps |
+| `hls` | AAC (adaptive) | up to ~141 kbps |
+
+> HLS buffers a few seconds for smooth playback, so the "Now Playing" panel can run slightly
+> ahead of the audio; the lower-latency MP3 and Opus streams stay closely in sync.
+
+## Keyboard shortcuts
 
 | Key | Action |
 |-----|--------|
-| `1` | Now Playing |
-| `2` | History |
-| `3` | Favorites |
-| `4` | Charts |
-| `5` | News |
-| `6` | Profile |
+| `1`–`6` | Switch view (Now Playing, History, Favorites, Charts, News, Profile) |
 | `j` / `k` | Scroll down / up |
+| `J` / `K` | Scroll five lines |
 | `g` / `G` | Jump to top / bottom |
-| `Enter` | Select / view song details |
-| `Space` | Play / pause radio |
-| `+` / `-` | Volume up / down (5%) |
+| `Enter` | View song details |
+| `Space` | Play / pause |
+| `+` / `-` | Volume up / down |
 | `f` | Toggle favorite (current or selected song) |
-| `r` | Send reaction to current song |
-| `h` / `l` | Previous / next chart tab |
+| `r` | Send a reaction to the current song |
+| `h` / `l` | Previous / next chart range |
 | `d` | Remove favorite (Favorites view) |
-| `L` | Logout (Profile view) |
-| `?` | Toggle help overlay |
-| `q` | Quit |
+| `p` | Play / stop a song's preview (in the detail popup) |
+| `L` | Log out (Profile view) |
+| `?` | Toggle the help overlay |
+| `q` / `Ctrl-C` | Quit |
 
 ## Configuration
 
-Config file: `~/.config/plaza-tui/config.toml`
+`~/.config/plaza-tui/config.toml` (or the platform equivalent), created on first run:
 
 ```toml
-stream_quality = "hls"   # hls | ogg | ogg-low | mp3 | mp3-low
+stream_quality = "mp3"   # mp3 | mp3-low | ogg | ogg-low | hls
 volume = 0.8             # 0.0 to 1.0
 image_protocol = ""      # "" = auto-detect | "kitty" | "sixel" | "iterm2"
 ```
 
-## Logs
-
-Application logs are written to:
-- Linux: `~/.local/share/plaza-tui/plaza-tui.log`
-- macOS: `~/Library/Application Support/plaza-tui/plaza-tui.log`
+Logs are written to `~/.local/share/plaza-tui/plaza-tui.log` (the platform data directory).
 
 ## Architecture
 
+A Cargo workspace of two libraries and a binary, with dependencies pointing inward toward the
+domain — the UI and frameworks stay at the edges:
+
 ```
-plaza-tui/
-├── src/
-│   ├── main.rs          # Entry point, CLI, logging
-│   ├── app.rs           # AppState, main event loop, render dispatch
-│   ├── config.rs        # Config struct, TOML persistence
-│   ├── auth.rs          # Login/logout, OS keyring token storage
-│   ├── error.rs         # PlazaError enum (thiserror)
-│   ├── theme.rs         # Vaporwave color palette + ratatui styles
-│   ├── socket.rs        # Socket.io client → broadcast channel
-│   ├── api/
-│   │   ├── models.rs    # Serde types (Song, User, StatusResource, ...)
-│   │   ├── mod.rs       # ApiClient (reqwest wrapper)
-│   │   └── client.rs    # All REST API methods
-│   ├── audio/
-│   │   ├── hls.rs       # HLS playlist fetching + segment streaming
-│   │   └── player.rs    # Symphonia decode → rodio output
-│   └── tui/
-│       ├── events.rs    # AppEvent enum, EventHandler (keyboard+socket+audio)
-│       ├── layout.rs    # Root layout (header/sidebar/content/statusbar)
-│       ├── widgets.rs   # Reusable vaporwave-styled components
-│       └── views/       # One file per screen
-└── tests/               # Integration tests
+crates/
+  plaza-api/     REST client, Socket.IO feed, auth/keyring, response models
+  plaza-audio/   the Player, a codec-agnostic PcmSource pipeline, and the
+                 MP3 / Opus / HLS-AAC decoders (incl. a small MPEG-TS demuxer)
+  plaza-tui/     the binary: config, application state, and the ratatui UI
 ```
+
+`plaza-api` and `plaza-audio` have no dependency on each other or on the UI; the binary wires
+them together. Each library exposes its own `thiserror` error type; the binary uses `anyhow`.
+
+## Development
+
+```bash
+just ci        # format check + clippy (-D warnings) + tests + docs (the CI gate)
+just test
+just run -- --stream-quality ogg
+just smoke     # live-network decode tests against radio.plaza.one (normally skipped)
+```
+
+[`just`](https://github.com/casey/just) is optional — each recipe is a thin wrapper over the
+equivalent `cargo` command. CI runs the same gates on Linux, macOS, and Windows.
 
 ## License
 
-MIT
+Licensed under either of [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT) at your option.
