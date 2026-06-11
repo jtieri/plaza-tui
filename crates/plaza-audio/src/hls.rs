@@ -50,6 +50,9 @@ const CHANNEL_CAP: usize = 512;
 /// Give up (and let the player reconnect) after this many consecutive poll failures.
 const MAX_CONSECUTIVE_FAILURES: u32 = 5;
 
+/// A [`PcmSource`] for Plaza's HLS endpoint. A background thread fetches and
+/// decodes AAC segments into a bounded buffer; [`next_chunk`](HlsAacPcmSource::next_chunk)
+/// drains it without blocking on the network.
 pub struct HlsAacPcmSource {
     rx: Receiver<PcmChunk>,
     stop: Arc<AtomicBool>,
@@ -57,6 +60,12 @@ pub struct HlsAacPcmSource {
 }
 
 impl HlsAacPcmSource {
+    /// Open the HLS stream at `master_url`, resolving it to the highest-bitrate
+    /// variant and starting the background fetcher.
+    ///
+    /// # Errors
+    /// [`PcmError::Permanent`] if the client can't be built or the master playlist
+    /// has no variants; [`PcmError::Ended`] for a transient fetch failure.
     pub fn open(master_url: String) -> Result<Self, PcmError> {
         let client = reqwest::blocking::Client::builder()
             .user_agent(concat!("plaza-tui/", env!("CARGO_PKG_VERSION")))

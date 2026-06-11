@@ -31,11 +31,19 @@ pub enum SocketEvent {
     Reconnected,
 }
 
+/// A handle to the real-time event broadcast. Drop it (and all subscribers) to
+/// stop the background connection task.
 pub struct SocketClient {
     sender: broadcast::Sender<SocketEvent>,
 }
 
 impl SocketClient {
+    /// Connect and start the background task that maintains the connection and
+    /// broadcasts [`SocketEvent`]s.
+    ///
+    /// # Errors
+    /// Currently infallible — the task connects and reconnects in the background —
+    /// but returns [`Result`](crate::Result) to allow for eager-connect failures later.
     pub async fn connect() -> crate::error::Result<Self> {
         let (sender, _) = broadcast::channel::<SocketEvent>(64);
         let sender_for_task = sender.clone();

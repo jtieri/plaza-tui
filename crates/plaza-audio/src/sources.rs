@@ -116,6 +116,7 @@ pub(crate) fn first_audio_track(
 // SymphoniaPcmSource — MP3 / Vorbis
 // ---------------------------------------------------------------------------
 
+/// A [`PcmSource`] backed entirely by symphonia: MP3 and Ogg/Vorbis.
 pub struct SymphoniaPcmSource {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn symphonia::core::codecs::Decoder>,
@@ -123,6 +124,11 @@ pub struct SymphoniaPcmSource {
 }
 
 impl SymphoniaPcmSource {
+    /// Open `url`, probing the container with `mime` as a format hint.
+    ///
+    /// # Errors
+    /// [`PcmError::Ended`] for a connection/probe failure (the player retries) and
+    /// [`PcmError::Permanent`] if the codec is unsupported.
     pub fn open(url: String, mime: &str) -> Result<Self, PcmError> {
         let mss = open_http_media(&url)?;
         let mut hint = Hint::new();
@@ -210,6 +216,8 @@ impl PcmSource for SymphoniaPcmSource {
 const OPUS_SAMPLE_RATE: u32 = 48_000;
 const OPUS_MAX_FRAME: usize = 5760; // 120ms @ 48kHz, per channel
 
+/// A [`PcmSource`] for Ogg/Opus: symphonia demuxes the container and libopus
+/// decodes the packets.
 pub struct OpusPcmSource {
     format: Box<dyn FormatReader>,
     decoder: opus::Decoder,
@@ -219,6 +227,11 @@ pub struct OpusPcmSource {
 }
 
 impl OpusPcmSource {
+    /// Open an Ogg/Opus stream at `url`.
+    ///
+    /// # Errors
+    /// [`PcmError::Ended`] for a connection/probe failure (the player retries) and
+    /// [`PcmError::Permanent`] if an Opus decoder cannot be created.
     pub fn open(url: String) -> Result<Self, PcmError> {
         let mss = open_http_media(&url)?;
         let mut hint = Hint::new();

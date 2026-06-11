@@ -15,7 +15,10 @@ pub enum Error {
     NotFound,
     /// The server returned an unexpected status code.
     #[error("server returned status {status}")]
-    Server { status: u16 },
+    Server {
+        /// The HTTP status code returned.
+        status: u16,
+    },
     /// The response was successful but its body was not what we expected.
     #[error("unexpected response: {0}")]
     Unexpected(String),

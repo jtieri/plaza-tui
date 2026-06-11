@@ -39,6 +39,7 @@ pub struct TsDemux {
 }
 
 impl TsDemux {
+    /// Create an empty demuxer that will discover the audio PID from the stream.
     pub fn new() -> Self {
         TsDemux {
             pmt_pid: None,

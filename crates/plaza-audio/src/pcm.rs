@@ -10,11 +10,14 @@
 pub struct PcmChunk {
     /// Interleaved samples (L,R,L,R,… for stereo).
     pub samples: Vec<f32>,
+    /// Sample rate in Hz.
     pub sample_rate: u32,
+    /// Channel count (1 for mono, 2 for stereo).
     pub channels: u16,
 }
 
 impl PcmChunk {
+    /// Create a chunk from interleaved samples and their format.
     pub fn new(samples: Vec<f32>, sample_rate: u32, channels: u16) -> Self {
         PcmChunk {
             samples,
@@ -23,6 +26,7 @@ impl PcmChunk {
         }
     }
 
+    /// Whether the chunk carries no samples.
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }

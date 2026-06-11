@@ -25,11 +25,16 @@ pub type ErrorReporter = Arc<dyn Fn(String) + Send + Sync>;
 /// Whether a playback session is finite (a downloaded preview) or infinite
 /// (a live radio stream that should be reconnected on a transient end).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StreamMode {
+enum StreamMode {
     OneShot,
     Live,
 }
 
+/// Plays Plaza streams through the system's default audio output.
+///
+/// Playback runs on a dedicated thread; the `Player` itself is a lightweight handle
+/// for issuing commands (play, pause, volume, stop). Stopping or dropping it tears
+/// the playback thread down.
 pub struct Player {
     sink: Arc<Mutex<Option<Sink>>>,
     _stream: Option<OutputStream>,
@@ -50,6 +55,11 @@ enum PlayerCommand {
 }
 
 impl Player {
+    /// Open the default audio output device.
+    ///
+    /// # Errors
+    /// Returns [`Error::Output`] if no output device is available or the stream
+    /// cannot be created.
     pub fn new() -> Result<Self> {
         let (stream, stream_handle) =
             OutputStream::try_default().map_err(|e| Error::Output(e.to_string()))?;
@@ -75,13 +85,22 @@ impl Player {
         self.error_report = Some(Arc::new(report));
     }
 
-    /// Play a live radio stream of the given quality. Reconnects on transient ends.
+    /// Play a live radio stream of the given quality, replacing any current
+    /// playback. Reconnects automatically on transient drops.
+    ///
+    /// # Errors
+    /// Returns [`Error::Output`] if the playback sink or thread cannot be created.
+    /// A bad stream surfaces later through the [`on_error`](Self::on_error) callback.
     pub fn start_live(&mut self, quality: StreamQuality) -> Result<()> {
         let factory = move || build_live_source(&quality);
         self.start_with_factory(factory, StreamMode::Live)
     }
 
-    /// Play a one-shot source (a song preview MP3). Stops at end.
+    /// Play a one-shot source (a song preview MP3), replacing any current playback.
+    /// Stops at end of stream rather than reconnecting.
+    ///
+    /// # Errors
+    /// Returns [`Error::Output`] if the playback sink or thread cannot be created.
     pub fn start_preview(&mut self, url: String) -> Result<()> {
         let factory = move || build_preview_source(url.clone());
         self.start_with_factory(factory, StreamMode::OneShot)
@@ -123,6 +142,7 @@ impl Player {
         Ok(())
     }
 
+    /// Pause playback, keeping the connection and buffered audio.
     pub fn pause(&mut self) {
         if let Some(tx) = &self.cmd_tx {
             let _ = tx.try_send(PlayerCommand::Pause);
@@ -130,6 +150,7 @@ impl Player {
         self.is_playing = false;
     }
 
+    /// Resume playback after a [`pause`](Self::pause).
     pub fn resume(&mut self) {
         if let Some(tx) = &self.cmd_tx {
             let _ = tx.try_send(PlayerCommand::Resume);
@@ -137,6 +158,7 @@ impl Player {
         self.is_playing = true;
     }
 
+    /// Set the output volume, clamped to `0.0..=1.0`.
     pub fn set_volume(&mut self, volume: f32) {
         let volume = volume.clamp(0.0, 1.0);
         self.volume = volume;
@@ -145,10 +167,12 @@ impl Player {
         }
     }
 
+    /// The current output volume in `0.0..=1.0`.
     pub fn volume(&self) -> f32 {
         self.volume
     }
 
+    /// Stop playback and tear down the playback thread.
     pub fn stop(&mut self) {
         self.stop_inner();
     }
@@ -169,6 +193,7 @@ impl Player {
         self.task_handle.take();
     }
 
+    /// Whether playback is currently active (not paused or stopped).
     pub fn is_playing(&self) -> bool {
         self.is_playing
     }

@@ -15,6 +15,11 @@ use crate::ApiClient;
 const KEYRING_SERVICE: &str = "plaza-tui";
 const KEYRING_ACCOUNT: &str = "auth-token";
 
+/// Authenticate with a username and password, returning a bearer token.
+///
+/// # Errors
+/// Returns [`Error::Unauthorized`] for bad credentials, [`Error::Server`] for
+/// other non-success statuses, or [`Error::Http`] on a transport failure.
 pub async fn login(client: &ApiClient, username: &str, password: &str) -> Result<String> {
     let form = LoginForm {
         username: username.to_string(),
@@ -35,6 +40,11 @@ pub async fn login(client: &ApiClient, username: &str, password: &str) -> Result
     }
 }
 
+/// Invalidate the session server-side and clear the locally stored token.
+///
+/// # Errors
+/// This always clears the local token; the returned `Result` is currently `Ok`
+/// even if the server request fails, since logout should never strand a session.
 pub async fn logout(client: &ApiClient) -> Result<()> {
     let url = client.url("v2/auth/logout");
     let _ = client
@@ -45,6 +55,7 @@ pub async fn logout(client: &ApiClient) -> Result<()> {
     Ok(())
 }
 
+/// Persist the bearer token to the OS keyring and a file fallback.
 pub fn save_token(token: &str) {
     // Save to keyring
     match Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {
@@ -59,6 +70,7 @@ pub fn save_token(token: &str) {
     save_token_file(token);
 }
 
+/// Load the saved bearer token, preferring the keyring and falling back to the file.
 pub fn load_token() -> Option<String> {
     // Try keyring first
     match Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {
@@ -76,6 +88,7 @@ pub fn load_token() -> Option<String> {
     load_token_file()
 }
 
+/// Remove the saved bearer token from both the keyring and the file fallback.
 pub fn delete_token() {
     // Delete from keyring
     match Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {

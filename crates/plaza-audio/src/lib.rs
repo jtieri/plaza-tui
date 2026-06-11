@@ -21,6 +21,8 @@
 //! # Ok::<(), plaza_audio::Error>(())
 //! ```
 
+#![warn(missing_docs)]
+
 pub mod error;
 pub mod hls;
 pub mod pcm;

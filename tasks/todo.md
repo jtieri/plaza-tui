@@ -75,7 +75,10 @@ anyhow in the binary, comments explain *why* (never restate code or narrate hist
 self-documenting code first, four gates green (fmt / clippy -D warnings / test / doc), TDD.
 
 - [x] rustfmt.toml + `cargo fmt`; remove vestigial fallback scaffolding; comment hygiene pass 1.
-- [ ] **Workspace / crate split** (the structural foundation; do first — fixes the §4.4
+- [x] **Workspace / crate split** — plaza-api + plaza-audio (libs, thiserror) + plaza-tui (bin,
+      anyhow). Per-crate errors; audio decoupled from tokio via an ErrorReporter callback;
+      `[workspace.dependencies]`. All four gates green (fmt/clippy -D warnings/test/doc).
+- [ ] ~~Workspace / crate split~~ (the structural foundation; do first — fixes the §4.4
       main.rs-redeclares-modules smell and makes lib public APIs legitimately used):
       ```
       plaza-tui/ (workspace)
