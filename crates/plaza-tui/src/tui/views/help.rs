@@ -35,6 +35,7 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, _state: &AppState)
         ("r", "Send reaction"),
         ("h / l", "Previous / next tab (Charts)"),
         ("d", "Remove favorite"),
+        ("t", "Sleep timer (off / 15 / 30 / 60 min)"),
         ("L", "Logout (Profile view)"),
         ("?", "Toggle this help"),
         ("q", "Quit"),

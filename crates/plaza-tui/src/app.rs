@@ -111,6 +111,11 @@ pub struct AppState {
     pub pending_audio: Option<PendingAudioCommand>,
     /// Artwork URL of the currently displayed song (used to detect song changes).
     pub artwork_url: Option<String>,
+    /// When the sleep timer should stop playback, if it is armed.
+    pub sleep_deadline: Option<Instant>,
+    /// The sleep timer's selected duration, retained so the key can cycle through
+    /// the presets.
+    pub sleep_total: Option<Duration>,
 }
 
 impl AppState {
@@ -142,6 +147,8 @@ impl AppState {
             show_logout_confirm: false,
             pending_audio: None,
             artwork_url: None,
+            sleep_deadline: None,
+            sleep_total: None,
         }
     }
 
@@ -155,6 +162,53 @@ impl AppState {
                 self.notification = None;
             }
         }
+    }
+
+    /// Advance the sleep timer through its presets (off → 15m → 30m → 60m → off),
+    /// arming or disarming it and notifying the user of the new setting.
+    pub fn cycle_sleep_timer(&mut self) {
+        self.sleep_total = next_sleep_duration(self.sleep_total);
+        self.sleep_deadline = self.sleep_total.map(|d| Instant::now() + d);
+        match self.sleep_total {
+            Some(d) => self.notify(format!("Sleep timer: {} min", d.as_secs() / 60)),
+            None => self.notify("Sleep timer off"),
+        }
+    }
+
+    /// Time left on the sleep timer, if it is armed.
+    pub fn sleep_remaining(&self) -> Option<Duration> {
+        self.sleep_deadline
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+    }
+
+    /// If the sleep timer has elapsed, disarm it and pause playback. Returns whether
+    /// it fired this tick.
+    pub fn tick_sleep_timer(&mut self) -> bool {
+        match self.sleep_deadline {
+            Some(deadline) if Instant::now() >= deadline => {
+                self.sleep_deadline = None;
+                self.sleep_total = None;
+                if self.is_playing {
+                    self.pending_audio = Some(PendingAudioCommand::Pause);
+                }
+                self.notify("Sleep timer ended — paused");
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// The next sleep-timer preset, cycling off → 15m → 30m → 60m → off.
+fn next_sleep_duration(current: Option<Duration>) -> Option<Duration> {
+    const FIFTEEN: u64 = 15 * 60;
+    const THIRTY: u64 = 30 * 60;
+    const SIXTY: u64 = 60 * 60;
+    match current.map(|d| d.as_secs()) {
+        None => Some(Duration::from_secs(FIFTEEN)),
+        Some(FIFTEEN) => Some(Duration::from_secs(THIRTY)),
+        Some(THIRTY) => Some(Duration::from_secs(SIXTY)),
+        _ => None,
     }
 }
 
@@ -485,6 +539,7 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
             EventAction::Quit => break,
         }
 
+        state.tick_sleep_timer();
         state.clear_expired_notification();
     }
 
@@ -563,6 +618,9 @@ async fn handle_event(event: AppEvent, state: &mut AppState, api: &mut ApiClient
                 KeyCode::Char('q') if state.view != View::Login => return EventAction::Quit,
                 KeyCode::Char('?') if state.view != View::Login => {
                     state.show_help = !state.show_help;
+                }
+                KeyCode::Char('t') if state.view != View::Login => {
+                    state.cycle_sleep_timer();
                 }
                 KeyCode::Char('1') if state.view != View::Login => {
                     state.view = View::NowPlaying;
@@ -1234,6 +1292,13 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, st
         ""
     };
     let volume = format!(" | Vol: {:.0}%", state.volume * 100.0);
+    let sleep = state
+        .sleep_remaining()
+        .map(|left| {
+            let secs = left.as_secs();
+            format!(" | \u{1f4a4} {}:{:02}", secs / 60, secs % 60)
+        })
+        .unwrap_or_default();
     let auth_note = if !state.is_authenticated {
         " | Guest"
     } else {
@@ -1256,6 +1321,7 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, st
             ratatui::style::Style::default().fg(Theme::GREEN),
         ),
         Span::styled(&volume, Theme::dim()),
+        Span::styled(&sleep, ratatui::style::Style::default().fg(Theme::PURPLE)),
         Span::styled(auth_note, Theme::dim()),
         Span::styled(
             &notification,
@@ -1266,4 +1332,32 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, st
 
     let para = Paragraph::new(line).style(ratatui::style::Style::default().bg(Theme::BACKGROUND));
     frame.render_widget(para, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sleep_timer_cycles_through_presets_and_back_to_off() {
+        let mins = |d: Option<Duration>| d.map(|d| d.as_secs() / 60);
+
+        let fifteen = next_sleep_duration(None);
+        assert_eq!(mins(fifteen), Some(15));
+
+        let thirty = next_sleep_duration(fifteen);
+        assert_eq!(mins(thirty), Some(30));
+
+        let sixty = next_sleep_duration(thirty);
+        assert_eq!(mins(sixty), Some(60));
+
+        // After the longest preset it wraps back to off.
+        assert_eq!(next_sleep_duration(sixty), None);
+    }
+
+    #[test]
+    fn sleep_timer_off_is_the_terminal_state_for_unknown_durations() {
+        // A value that isn't one of the presets disarms rather than getting stuck.
+        assert_eq!(next_sleep_duration(Some(Duration::from_secs(42))), None);
+    }
 }
