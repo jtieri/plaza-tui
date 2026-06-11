@@ -2968,36 +2968,59 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
+name = "plaza-api"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs",
+ "keyring",
+ "reqwest",
+ "rust_socketio",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
+name = "plaza-audio"
+version = "0.1.0"
+dependencies = [
+ "m3u8-rs",
+ "opus",
+ "reqwest",
+ "rodio",
+ "serde",
+ "symphonia",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
 name = "plaza-tui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bytes",
  "chrono",
  "clap",
  "crossterm",
  "dirs",
  "futures-util",
  "image",
- "keyring",
- "m3u8-rs",
- "opus",
+ "plaza-api",
+ "plaza-audio",
  "ratatui",
  "ratatui-image",
  "reqwest",
- "rodio",
- "rust_socketio",
  "serde",
- "serde_json",
- "symphonia",
  "tempfile",
- "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "toml",
  "tracing",
  "tracing-subscriber",
- "wiremock",
 ]
 
 [[package]]

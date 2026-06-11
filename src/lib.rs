@@ -1,9 +1,0 @@
-pub mod error;
-pub mod config;
-pub mod auth;
-pub mod theme;
-pub mod socket;
-pub mod app;
-pub mod api;
-pub mod audio;
-pub mod tui;

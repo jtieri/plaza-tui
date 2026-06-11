@@ -69,14 +69,25 @@ song ~20s before the audio actually changed (audio drifting behind the live-edge
 - Tests: 6 `select_window` cases (first-poll start, steady, nothing-new, skip-forward on
   fall-behind, latency-never-exceeds-buffer, empty playlist). Live HLS smoke still 99.9%.
 
-### Phase 2 — Productionize
-- [ ] Kill dead code & clippy warnings (target `clippy -D warnings`); remove unused error variants.
-- [ ] Consistent error surfacing to the UI; no silent failures.
-- [ ] `cargo fmt`, doc comments on public items.
-- [ ] **CI** (GitHub Actions): fmt check, clippy -D warnings, build, test on stable; cache;
-      install C toolchain for libopus vendored build.
-- [ ] Expand tests for regression safety; aim to cover each module.
-- [ ] README: features, install (incl. audio backend notes), keybindings, config, screenshots.
+### Phase 2 — Productionize (in progress; follows ~/development/rust/bobba/docs/style.md)
+Standards: dependency-rule crate boundaries, private-by-default, thiserror per lib crate +
+anyhow in the binary, comments explain *why* (never restate code or narrate history),
+self-documenting code first, four gates green (fmt / clippy -D warnings / test / doc), TDD.
+
+- [x] rustfmt.toml + `cargo fmt`; remove vestigial fallback scaffolding; comment hygiene pass 1.
+- [x] **Workspace / crate split** — plaza-api + plaza-audio (libs, thiserror) + plaza-tui (bin,
+      anyhow). Per-crate errors; audio decoupled from tokio via an ErrorReporter callback;
+      `[workspace.dependencies]`. All four gates green (fmt/clippy -D warnings/test/doc).
+- [x] Clippy `-D warnings` clean across all crates; dead code removed/justified.
+- [x] Doc comments on every public item; crate-level `//!` docs with examples; `cargo doc` clean;
+      `#![warn(missing_docs)]` on both libraries.
+- [x] **CI** (GitHub Actions): the four gates on stable across ubuntu/macos/windows; cargo cache;
+      ALSA headers installed on Linux (cmake + C compiler preinstalled for the libopus build).
+- [x] **`justfile`**: fmt/lint/test/doc/ci/run/release/smoke — push-button locally.
+- [x] Expand tests: API client via wiremock (path/auth/parse/error-mapping). 50 tests total.
+- [x] README rewritten for the workspace; MIT + Apache-2.0 license files added.
+
+Phase 2 complete. Four gates green: fmt, clippy -D warnings, 44 tests (+6 ignored), doc.
 
 ### Phase 3 — Beyond parity (after parity lands; scope per user)
 - [ ] Remaining API parity: favorites **export**, register, profile edit / password / delete,
