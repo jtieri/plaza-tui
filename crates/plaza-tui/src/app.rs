@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use plaza_api::models::*;
 use plaza_api::{auth, ApiClient, SocketClient, SocketEvent};
-use plaza_audio::Player;
+use plaza_audio::{Player, RecordMode};
 
 use crate::config::Config;
 use crate::tui::events::{AppEvent, EventHandler};
@@ -31,6 +31,15 @@ pub enum PendingAudioCommand {
     Pause,
     Resume,
     SetVolume(f32),
+}
+
+/// A recording control queued by a key handler and applied (with the player) in
+/// the main loop.
+pub enum RecordingAction {
+    /// Cycle the recording mode (off → cache → session → off).
+    Cycle,
+    /// Promote the most recently cached song into the library.
+    Keep,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +125,10 @@ pub struct AppState {
     /// The sleep timer's selected duration, retained so the key can cycle through
     /// the presets.
     pub sleep_total: Option<Duration>,
+    /// Current recording mode, mirrored from the player for display.
+    pub recording_mode: RecordMode,
+    /// A recording control awaiting the next main-loop iteration.
+    pub pending_recording: Option<RecordingAction>,
 }
 
 impl AppState {
@@ -149,6 +162,8 @@ impl AppState {
             artwork_url: None,
             sleep_deadline: None,
             sleep_total: None,
+            recording_mode: config.recording.mode,
+            pending_recording: None,
         }
     }
 
@@ -245,6 +260,8 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
         p.on_error(move |msg| {
             let _ = tx.try_send(msg);
         });
+        // Spawn the recorder up front (even when off) so it can be toggled at runtime.
+        p.configure_recording(config.recording.to_config());
     }
     let _audio_error_tx = audio_error_tx; // keep alive so channel never auto-closes
 
@@ -331,6 +348,7 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
     let mut prev_show_help = false;
     let mut prev_show_popup = false;
     let mut prev_popup_song_id: Option<String> = None;
+    let mut last_recorded_artwork: Option<String> = None;
     loop {
         // Check if the song changed and we need to fetch new artwork
         if state.artwork_url.as_deref() != current_artwork_url.as_deref() {
@@ -518,6 +536,38 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
             }
         }
 
+        // Process pending recording control from a key handler.
+        if let Some(action) = state.pending_recording.take() {
+            if let Some(ref mut p) = player {
+                match action {
+                    RecordingAction::Cycle => {
+                        let mode = p.cycle_recording_mode();
+                        state.recording_mode = mode;
+                        if mode != RecordMode::Off && !stream_quality.is_recordable() {
+                            state
+                                .notify("Recording on — switch to the OGG stream to capture songs");
+                        } else {
+                            state.notify(format!("Recording: {}", mode.label()));
+                        }
+                    }
+                    RecordingAction::Keep => {
+                        p.keep_recording();
+                        state.notify("Keeping the last recorded song");
+                    }
+                }
+            } else {
+                state.notify("No audio output — recording unavailable");
+            }
+        }
+
+        // Keep the recorder's artwork in sync with the now-playing song.
+        if state.artwork_url != last_recorded_artwork {
+            last_recorded_artwork = state.artwork_url.clone();
+            if let Some(ref p) = player {
+                p.set_now_playing_artwork(state.artwork_url.clone());
+            }
+        }
+
         // Force full terminal clear when any overlay is dismissed to erase stale cells.
         let show_popup = state.show_song_detail.is_some();
         if (prev_show_help && !state.show_help) || (prev_show_popup && !show_popup) {
@@ -621,6 +671,12 @@ async fn handle_event(event: AppEvent, state: &mut AppState, api: &mut ApiClient
                 }
                 KeyCode::Char('t') if state.view != View::Login => {
                     state.cycle_sleep_timer();
+                }
+                KeyCode::Char('R') if state.view != View::Login => {
+                    state.pending_recording = Some(RecordingAction::Cycle);
+                }
+                KeyCode::Char('s') if state.view != View::Login => {
+                    state.pending_recording = Some(RecordingAction::Keep);
                 }
                 KeyCode::Char('1') if state.view != View::Login => {
                     state.view = View::NowPlaying;
@@ -1310,6 +1366,11 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, st
             format!(" | \u{1f4a4} {}:{:02}", secs / 60, secs % 60)
         })
         .unwrap_or_default();
+    let recording = if state.recording_mode == RecordMode::Off {
+        String::new()
+    } else {
+        format!(" | \u{25cf} REC {}", state.recording_mode.label())
+    };
     let auth_note = if !state.is_authenticated {
         " | Guest"
     } else {
@@ -1333,6 +1394,7 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, st
         ),
         Span::styled(&volume, Theme::dim()),
         Span::styled(&sleep, ratatui::style::Style::default().fg(Theme::PURPLE)),
+        Span::styled(&recording, ratatui::style::Style::default().fg(Theme::RED)),
         Span::styled(auth_note, Theme::dim()),
         Span::styled(
             &notification,

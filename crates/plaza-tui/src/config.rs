@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
-use plaza_audio::StreamQuality;
+use plaza_audio::{RecordMode, RecordingConfig, StreamQuality};
 use serde::{Deserialize, Serialize};
 
 /// Persistent user settings.
@@ -19,6 +19,9 @@ pub struct Config {
     /// `None` auto-detects.
     #[serde(default)]
     pub image_protocol: Option<String>,
+    /// Song-recording settings.
+    #[serde(default)]
+    pub recording: RecordingSettings,
 }
 
 fn default_volume() -> f32 {
@@ -31,8 +34,76 @@ impl Default for Config {
             stream_quality: StreamQuality::default(),
             volume: default_volume(),
             image_protocol: None,
+            recording: RecordingSettings::default(),
         }
     }
+}
+
+/// Settings for recording songs from the live stream to a local FLAC library.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordingSettings {
+    /// What to do with completed songs: `off`, `cache`, or `session`.
+    #[serde(default)]
+    pub mode: RecordMode,
+    /// Library directory; empty means `<audio dir>/Plaza`.
+    #[serde(default)]
+    pub directory: Option<String>,
+    /// How many songs the rolling cache keeps.
+    #[serde(default = "default_cache_size")]
+    pub cache_size: usize,
+    /// Download and embed cover art.
+    #[serde(default = "default_true")]
+    pub embed_artwork: bool,
+    /// Skip re-saving a song already in the library.
+    #[serde(default = "default_true")]
+    pub deduplicate: bool,
+}
+
+fn default_cache_size() -> usize {
+    20
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for RecordingSettings {
+    fn default() -> Self {
+        RecordingSettings {
+            mode: RecordMode::Off,
+            directory: None,
+            cache_size: default_cache_size(),
+            embed_artwork: true,
+            deduplicate: true,
+        }
+    }
+}
+
+impl RecordingSettings {
+    /// Resolve these settings into a [`RecordingConfig`] for the audio engine.
+    pub fn to_config(&self) -> RecordingConfig {
+        let root = self
+            .directory
+            .as_ref()
+            .filter(|d| !d.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(default_recording_root);
+        RecordingConfig {
+            mode: self.mode,
+            root,
+            cache_size: self.cache_size,
+            embed_artwork: self.embed_artwork,
+            deduplicate: self.deduplicate,
+        }
+    }
+}
+
+/// Default recording library: the platform music directory's `Plaza` folder.
+fn default_recording_root() -> PathBuf {
+    dirs::audio_dir()
+        .or_else(dirs::data_local_dir)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("Plaza")
 }
 
 impl Config {

@@ -6,6 +6,10 @@
 //! correctness guarantees in `tasks/recording-design.md`.
 
 pub mod flac;
+pub mod recorder;
+
+pub(crate) use recorder::Recorder;
+pub use recorder::{RecordHandle, RecordMode, RecordingConfig, SongTags};
 
 /// An error while encoding or writing a recording.
 #[derive(Debug, thiserror::Error)]

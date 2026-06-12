@@ -37,6 +37,8 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, _state: &AppState)
         ("d", "Remove favorite"),
         ("e", "Export favorites (Favorites view)"),
         ("t", "Sleep timer (off / 15 / 30 / 60 min)"),
+        ("R", "Cycle recording (off / cache / session)"),
+        ("s", "Keep last recorded song"),
         ("L", "Logout (Profile view)"),
         ("?", "Toggle this help"),
         ("q", "Quit"),

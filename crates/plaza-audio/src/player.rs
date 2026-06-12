@@ -15,6 +15,7 @@ use rodio::{OutputStream, OutputStreamHandle, Sink};
 use crate::error::{Error, Result};
 use crate::pcm::{PcmChunk, PcmError, PcmSource};
 use crate::quality::StreamQuality;
+use crate::recording::{RecordMode, Recorder, RecordingConfig};
 use crate::sources::{build_live_source, build_preview_source};
 
 /// A callback the audio thread invokes with a human-readable message when playback
@@ -42,6 +43,7 @@ pub struct Player {
     task_handle: Option<std::thread::JoinHandle<()>>,
     cmd_tx: Option<std::sync::mpsc::SyncSender<PlayerCommand>>,
     error_report: Option<ErrorReporter>,
+    recorder: Option<Recorder>,
     volume: f32,
     is_playing: bool,
 }
@@ -71,9 +73,50 @@ impl Player {
             task_handle: None,
             cmd_tx: None,
             error_report: None,
+            recorder: None,
             volume: 0.8,
             is_playing: false,
         })
+    }
+
+    /// Start the recorder, which captures completed songs from supported (Opus)
+    /// live streams. Spawns a background recorder thread; safe to call with
+    /// [`RecordMode::Off`] so recording can be toggled on later.
+    pub fn configure_recording(&mut self, config: RecordingConfig) {
+        self.recorder = Some(Recorder::spawn(config));
+    }
+
+    /// The current recording mode ([`RecordMode::Off`] if recording isn't configured).
+    pub fn recording_mode(&self) -> RecordMode {
+        self.recorder
+            .as_ref()
+            .map_or(RecordMode::Off, Recorder::mode)
+    }
+
+    /// Advance recording to its next mode (off → cache → session → off), returning it.
+    pub fn cycle_recording_mode(&mut self) -> RecordMode {
+        match &mut self.recorder {
+            Some(r) => {
+                let mode = r.mode().next();
+                r.set_mode(mode);
+                mode
+            }
+            None => RecordMode::Off,
+        }
+    }
+
+    /// Promote the most recently cached song into the permanent library.
+    pub fn keep_recording(&self) {
+        if let Some(r) = &self.recorder {
+            r.keep();
+        }
+    }
+
+    /// Update the now-playing artwork URL used to tag songs as they're recorded.
+    pub fn set_now_playing_artwork(&self, url: Option<String>) {
+        if let Some(r) = &self.recorder {
+            r.set_artwork(url);
+        }
     }
 
     /// Register a callback for unrecoverable playback failures (e.g. an undecodable
@@ -92,7 +135,8 @@ impl Player {
     /// Returns [`Error::Output`] if the playback sink or thread cannot be created.
     /// A bad stream surfaces later through the [`on_error`](Self::on_error) callback.
     pub fn start_live(&mut self, quality: StreamQuality) -> Result<()> {
-        let factory = move || build_live_source(&quality);
+        let rec = self.recorder.as_ref().map(Recorder::handle);
+        let factory = move || build_live_source(&quality, rec.clone());
         self.start_with_factory(factory, StreamMode::Live)
     }
 

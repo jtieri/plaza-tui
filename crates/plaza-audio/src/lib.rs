@@ -36,3 +36,4 @@ pub use error::{Error, Result};
 pub use pcm::{PcmChunk, PcmError, PcmSource};
 pub use player::Player;
 pub use quality::StreamQuality;
+pub use recording::{RecordMode, RecordingConfig};
