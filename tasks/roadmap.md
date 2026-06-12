@@ -21,8 +21,11 @@ priority and dependency.
 ### Recording → local FLAC library (the keystone) — see `recording-design.md`
 Capture full songs from the live stream into a tagged FLAC library. Correctness is
 non-negotiable: exact in-band splits, atomic writes, discard incomplete songs.
-- **3a** Recorder v1 (Opus): exact Ogg-boundary splitting, FLAC encode, in-band tags
-  + embedded/sidecar cover art, cache/session modes, keep key, config, status.
+- **3a DONE** Recorder v1 (Opus): exact Ogg-boundary splitting, FLAC encode (with a
+  STREAMINFO fix-up so symphonia can read it back), in-band OpusTags, embedded cover
+  art, off/cache/session modes, `R` cycle + `s` keep keys, `[recording]` config,
+  status indicator. Validated end-to-end against the live stream (records a real song
+  to a valid, decodable FLAC). Recording is gated to Opus.
 - **3b** MP3 recording via `Icy-MetaData`.
 - **3c** Local library + on-demand playback (local FLAC `PcmSource`, browser view).
 - **3d** Local playlists (build / save / play from the library).
