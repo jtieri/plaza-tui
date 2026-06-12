@@ -393,3 +393,100 @@ impl PcmSource for OpusPcmSource {
         }
     }
 }
+
+#[cfg(test)]
+mod recording_e2e {
+    use super::*;
+    use crate::quality::StreamQuality;
+    use crate::recording::{RecordMode, Recorder, RecordingConfig};
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
+
+    fn first_flac(dir: &Path) -> Option<PathBuf> {
+        std::fs::read_dir(dir.join(".cache"))
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.extension().is_some_and(|x| x == "flac"))
+    }
+
+    /// Decode FLAC bytes with symphonia; return the per-channel frame count.
+    fn decode_frames(flac: &[u8]) -> u64 {
+        use symphonia::core::codecs::DecoderOptions;
+        let mss = MediaSourceStream::new(
+            Box::new(std::io::Cursor::new(flac.to_vec())),
+            Default::default(),
+        );
+        let mut hint = Hint::new();
+        hint.with_extension("flac");
+        let probed = symphonia::default::get_probe()
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
+            .expect("recorded file must be valid FLAC");
+        let mut format = probed.format;
+        let (track_id, params) = first_audio_track(format.as_ref()).unwrap();
+        let mut decoder = symphonia::default::get_codecs()
+            .make(&params, &DecoderOptions::default())
+            .unwrap();
+        let mut frames = 0u64;
+        while let Ok(packet) = format.next_packet() {
+            if packet.track_id() != track_id {
+                continue;
+            }
+            if let Ok(d) = decoder.decode(&packet) {
+                frames += d.frames() as u64;
+            }
+        }
+        frames
+    }
+
+    /// Record a real song from the live Opus stream and verify the resulting file is
+    /// a complete, decodable FLAC. Slow: it must span two song boundaries.
+    #[test]
+    #[ignore = "network: records a live song end-to-end (slow, up to several minutes)"]
+    fn records_a_live_song_to_a_valid_flac() {
+        let dir = std::env::temp_dir().join(format!("plaza_rec_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let recorder = Recorder::spawn(RecordingConfig {
+            mode: RecordMode::Cache,
+            root: dir.clone(),
+            cache_size: 5,
+            embed_artwork: false,
+            deduplicate: false,
+        });
+        let mut source = OpusPcmSource::open(
+            StreamQuality::Ogg.stream_url().to_string(),
+            Some(recorder.handle()),
+        )
+        .expect("open opus source");
+
+        let start = Instant::now();
+        let mut saved = None;
+        while start.elapsed() < Duration::from_secs(480) {
+            if source.next_chunk().is_err() {
+                break;
+            }
+            if let Some(p) = first_flac(&dir) {
+                std::thread::sleep(Duration::from_millis(300)); // let the rename settle
+                saved = Some(p);
+                break;
+            }
+        }
+        drop(source);
+        drop(recorder);
+
+        let path = saved.expect("a full song should have been recorded within the time limit");
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[0..4], b"fLaC");
+        // A real song is far longer than a few seconds of audio.
+        assert!(
+            decode_frames(&bytes) > 200_000,
+            "recorded song unexpectedly short"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
