@@ -37,6 +37,13 @@ impl StreamQuality {
         }
     }
 
+    /// Whether songs can be recorded from this stream. Only Opus carries exact
+    /// in-band song boundaries, so it's the only format the recorder can split
+    /// losslessly.
+    pub fn is_recordable(self) -> bool {
+        matches!(self, StreamQuality::Ogg | StreamQuality::OggLow)
+    }
+
     /// A short human-readable label, e.g. for status messages.
     pub fn label(self) -> &'static str {
         match self {

@@ -158,7 +158,7 @@ fn test_mp3_source_decodes() {
 fn test_opus_source_decodes() {
     use plaza_audio::sources::OpusPcmSource;
     let url = plaza_audio::StreamQuality::Ogg.stream_url().to_string();
-    let source = OpusPcmSource::open(url).expect("open opus source");
+    let source = OpusPcmSource::open(url, None).expect("open opus source");
     let (t, nz) = drain_source(Box::new(source), 400);
     assert_audible("Opus source", t, nz);
 }

@@ -20,17 +20,24 @@ use symphonia::core::probe::Hint;
 use crate::hls::HlsAacPcmSource;
 use crate::pcm::{PcmChunk, PcmError, PcmSource};
 use crate::quality::StreamQuality;
+use crate::recording::{RecordHandle, SongTags};
 
 /// Build the live [`PcmSource`] for a stream quality, opening the network
 /// connection. A failure to open is returned as [`PcmError`] so the player can
 /// decide whether to retry (transient) or stop (permanent).
-pub fn build_live_source(quality: &StreamQuality) -> Result<Box<dyn PcmSource>, PcmError> {
+///
+/// `rec` is wired into the Opus source only — it's the one format with exact
+/// in-band song boundaries, so it's the only one that can record correctly.
+pub(crate) fn build_live_source(
+    quality: &StreamQuality,
+    rec: Option<RecordHandle>,
+) -> Result<Box<dyn PcmSource>, PcmError> {
     let url = quality.stream_url().to_string();
     match quality {
         StreamQuality::Mp3 | StreamQuality::Mp3Low => {
             Ok(Box::new(SymphoniaPcmSource::open(url, "audio/mpeg")?))
         }
-        StreamQuality::Ogg | StreamQuality::OggLow => Ok(Box::new(OpusPcmSource::open(url)?)),
+        StreamQuality::Ogg | StreamQuality::OggLow => Ok(Box::new(OpusPcmSource::open(url, rec)?)),
         StreamQuality::Hls => Ok(Box::new(HlsAacPcmSource::open(url)?)),
     }
 }
@@ -218,21 +225,27 @@ const OPUS_MAX_FRAME: usize = 5760; // 120ms @ 48kHz, per channel
 
 /// A [`PcmSource`] for Ogg/Opus: symphonia demuxes the container and libopus
 /// decodes the packets.
+///
+/// Each Plaza song is its own chained-Ogg logical stream, so a stream reset marks
+/// an exact song boundary. When recording, this source brackets each song with
+/// begin/finish events and forwards the decoded samples — the boundary precision
+/// that makes lossless splitting possible.
 pub struct OpusPcmSource {
     format: Box<dyn FormatReader>,
     decoder: opus::Decoder,
     track_id: u32,
     channels: u16,
     out: Vec<f32>,
+    rec: Option<RecordHandle>,
 }
 
 impl OpusPcmSource {
-    /// Open an Ogg/Opus stream at `url`.
+    /// Open an Ogg/Opus stream at `url`, optionally feeding `rec` with recording events.
     ///
     /// # Errors
     /// [`PcmError::Ended`] for a connection/probe failure (the player retries) and
     /// [`PcmError::Permanent`] if an Opus decoder cannot be created.
-    pub fn open(url: String) -> Result<Self, PcmError> {
+    pub fn open(url: String, rec: Option<RecordHandle>) -> Result<Self, PcmError> {
         let mss = open_http_media(&url)?;
         let mut hint = Hint::new();
         hint.mime_type("audio/ogg");
@@ -244,18 +257,53 @@ impl OpusPcmSource {
                 &MetadataOptions::default(),
             )
             .map_err(|_| PcmError::Ended)?;
-        let format = probed.format;
+        let mut format = probed.format;
         let (track_id, params) = first_audio_track(format.as_ref()).ok_or(PcmError::Ended)?;
         let channels = params.channels.map(|c| c.count() as u16).unwrap_or(2);
         let decoder = make_opus_decoder(channels)?;
+
+        // The song already playing when we connect is captured mid-way, so it is not
+        // savable; only songs we see from their start (after a reset) are.
+        if rec.as_ref().is_some_and(RecordHandle::is_active) {
+            let tags = read_tags(format.as_mut());
+            if let Some(r) = &rec {
+                r.begin(tags, false);
+            }
+        }
+
         Ok(OpusPcmSource {
             format,
             decoder,
             track_id,
             channels,
             out: vec![0.0; OPUS_MAX_FRAME * channels.max(1) as usize],
+            rec,
         })
     }
+
+    /// Whether recording is on; gates the per-chunk sample clone.
+    fn recording(&self) -> bool {
+        self.rec.as_ref().is_some_and(RecordHandle::is_active)
+    }
+}
+
+/// Read artist/album/title from the format reader's current metadata revision
+/// (the Ogg/Opus `OpusTags`).
+fn read_tags(format: &mut dyn FormatReader) -> SongTags {
+    use symphonia::core::meta::StandardTagKey;
+    let mut tags = SongTags::default();
+    let metadata = format.metadata();
+    if let Some(rev) = metadata.current() {
+        for tag in rev.tags() {
+            match tag.std_key {
+                Some(StandardTagKey::Artist) => tags.artist = Some(tag.value.to_string()),
+                Some(StandardTagKey::Album) => tags.album = Some(tag.value.to_string()),
+                Some(StandardTagKey::TrackTitle) => tags.title = Some(tag.value.to_string()),
+                _ => {}
+            }
+        }
+    }
+    tags
 }
 
 fn make_opus_decoder(channels: u16) -> Result<opus::Decoder, PcmError> {
@@ -273,9 +321,24 @@ impl PcmSource for OpusPcmSource {
             let packet = match self.format.next_packet() {
                 Ok(p) => p,
                 Err(SymphoniaError::ResetRequired) => {
-                    // New logical Opus stream: refresh track/channel layout.
-                    let (track_id, params) =
-                        first_audio_track(self.format.as_ref()).ok_or(PcmError::Ended)?;
+                    // A new logical stream is an exact song boundary: the previous
+                    // song ended cleanly here.
+                    if let Some(r) = &self.rec {
+                        if r.is_active() {
+                            r.finish();
+                        }
+                    }
+                    let (track_id, params) = match first_audio_track(self.format.as_ref()) {
+                        Some(t) => t,
+                        None => {
+                            if let Some(r) = &self.rec {
+                                if r.is_active() {
+                                    r.abort();
+                                }
+                            }
+                            return Err(PcmError::Ended);
+                        }
+                    };
                     self.track_id = track_id;
                     let channels = params.channels.map(|c| c.count() as u16).unwrap_or(2);
                     if channels != self.channels {
@@ -283,9 +346,24 @@ impl PcmSource for OpusPcmSource {
                         self.decoder = make_opus_decoder(channels)?;
                         self.out = vec![0.0; OPUS_MAX_FRAME * channels.max(1) as usize];
                     }
+                    // The next song is captured from its start, so it is savable.
+                    if self.recording() {
+                        let tags = read_tags(self.format.as_mut());
+                        if let Some(r) = &self.rec {
+                            r.begin(tags, true);
+                        }
+                    }
                     continue;
                 }
-                Err(_) => return Err(PcmError::Ended),
+                Err(_) => {
+                    // The stream dropped mid-song; that capture is incomplete.
+                    if let Some(r) = &self.rec {
+                        if r.is_active() {
+                            r.abort();
+                        }
+                    }
+                    return Err(PcmError::Ended);
+                }
             };
             if packet.track_id() != self.track_id {
                 continue;
@@ -300,15 +378,115 @@ impl PcmSource for OpusPcmSource {
                     if n == 0 {
                         continue;
                     }
-                    return Ok(Some(PcmChunk::new(
-                        self.out[..n].to_vec(),
-                        OPUS_SAMPLE_RATE,
-                        self.channels,
-                    )));
+                    let chunk =
+                        PcmChunk::new(self.out[..n].to_vec(), OPUS_SAMPLE_RATE, self.channels);
+                    if self.recording() {
+                        if let Some(r) = &self.rec {
+                            r.samples(chunk.clone());
+                        }
+                    }
+                    return Ok(Some(chunk));
                 }
                 // A corrupt packet shouldn't kill the stream; skip it.
                 Err(_) => continue,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod recording_e2e {
+    use super::*;
+    use crate::quality::StreamQuality;
+    use crate::recording::{RecordMode, Recorder, RecordingConfig};
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
+
+    fn first_flac(dir: &Path) -> Option<PathBuf> {
+        std::fs::read_dir(dir.join(".cache"))
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.extension().is_some_and(|x| x == "flac"))
+    }
+
+    /// Decode FLAC bytes with symphonia; return the per-channel frame count.
+    fn decode_frames(flac: &[u8]) -> u64 {
+        use symphonia::core::codecs::DecoderOptions;
+        let mss = MediaSourceStream::new(
+            Box::new(std::io::Cursor::new(flac.to_vec())),
+            Default::default(),
+        );
+        let mut hint = Hint::new();
+        hint.with_extension("flac");
+        let probed = symphonia::default::get_probe()
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
+            .expect("recorded file must be valid FLAC");
+        let mut format = probed.format;
+        let (track_id, params) = first_audio_track(format.as_ref()).unwrap();
+        let mut decoder = symphonia::default::get_codecs()
+            .make(&params, &DecoderOptions::default())
+            .unwrap();
+        let mut frames = 0u64;
+        while let Ok(packet) = format.next_packet() {
+            if packet.track_id() != track_id {
+                continue;
+            }
+            if let Ok(d) = decoder.decode(&packet) {
+                frames += d.frames() as u64;
+            }
+        }
+        frames
+    }
+
+    /// Record a real song from the live Opus stream and verify the resulting file is
+    /// a complete, decodable FLAC. Slow: it must span two song boundaries.
+    #[test]
+    #[ignore = "network: records a live song end-to-end (slow, up to several minutes)"]
+    fn records_a_live_song_to_a_valid_flac() {
+        let dir = std::env::temp_dir().join(format!("plaza_rec_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let recorder = Recorder::spawn(RecordingConfig {
+            mode: RecordMode::Cache,
+            root: dir.clone(),
+            cache_size: 5,
+            embed_artwork: false,
+            deduplicate: false,
+        });
+        let mut source = OpusPcmSource::open(
+            StreamQuality::Ogg.stream_url().to_string(),
+            Some(recorder.handle()),
+        )
+        .expect("open opus source");
+
+        let start = Instant::now();
+        let mut saved = None;
+        while start.elapsed() < Duration::from_secs(480) {
+            if source.next_chunk().is_err() {
+                break;
+            }
+            if let Some(p) = first_flac(&dir) {
+                std::thread::sleep(Duration::from_millis(300)); // let the rename settle
+                saved = Some(p);
+                break;
+            }
+        }
+        drop(source);
+        drop(recorder);
+
+        let path = saved.expect("a full song should have been recorded within the time limit");
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[0..4], b"fLaC");
+        // A real song is far longer than a few seconds of audio.
+        assert!(
+            decode_frames(&bytes) > 200_000,
+            "recorded song unexpectedly short"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

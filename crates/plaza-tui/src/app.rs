@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use plaza_api::models::*;
 use plaza_api::{auth, ApiClient, SocketClient, SocketEvent};
-use plaza_audio::Player;
+use plaza_audio::{Player, RecordMode};
 
 use crate::config::Config;
 use crate::tui::events::{AppEvent, EventHandler};
@@ -31,6 +31,15 @@ pub enum PendingAudioCommand {
     Pause,
     Resume,
     SetVolume(f32),
+}
+
+/// A recording control queued by a key handler and applied (with the player) in
+/// the main loop.
+pub enum RecordingAction {
+    /// Cycle the recording mode (off → cache → session → off).
+    Cycle,
+    /// Promote the most recently cached song into the library.
+    Keep,
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +120,15 @@ pub struct AppState {
     pub pending_audio: Option<PendingAudioCommand>,
     /// Artwork URL of the currently displayed song (used to detect song changes).
     pub artwork_url: Option<String>,
+    /// When the sleep timer should stop playback, if it is armed.
+    pub sleep_deadline: Option<Instant>,
+    /// The sleep timer's selected duration, retained so the key can cycle through
+    /// the presets.
+    pub sleep_total: Option<Duration>,
+    /// Current recording mode, mirrored from the player for display.
+    pub recording_mode: RecordMode,
+    /// A recording control awaiting the next main-loop iteration.
+    pub pending_recording: Option<RecordingAction>,
 }
 
 impl AppState {
@@ -142,6 +160,10 @@ impl AppState {
             show_logout_confirm: false,
             pending_audio: None,
             artwork_url: None,
+            sleep_deadline: None,
+            sleep_total: None,
+            recording_mode: config.recording.mode,
+            pending_recording: None,
         }
     }
 
@@ -155,6 +177,53 @@ impl AppState {
                 self.notification = None;
             }
         }
+    }
+
+    /// Advance the sleep timer through its presets (off → 15m → 30m → 60m → off),
+    /// arming or disarming it and notifying the user of the new setting.
+    pub fn cycle_sleep_timer(&mut self) {
+        self.sleep_total = next_sleep_duration(self.sleep_total);
+        self.sleep_deadline = self.sleep_total.map(|d| Instant::now() + d);
+        match self.sleep_total {
+            Some(d) => self.notify(format!("Sleep timer: {} min", d.as_secs() / 60)),
+            None => self.notify("Sleep timer off"),
+        }
+    }
+
+    /// Time left on the sleep timer, if it is armed.
+    pub fn sleep_remaining(&self) -> Option<Duration> {
+        self.sleep_deadline
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+    }
+
+    /// If the sleep timer has elapsed, disarm it and pause playback. Returns whether
+    /// it fired this tick.
+    pub fn tick_sleep_timer(&mut self) -> bool {
+        match self.sleep_deadline {
+            Some(deadline) if Instant::now() >= deadline => {
+                self.sleep_deadline = None;
+                self.sleep_total = None;
+                if self.is_playing {
+                    self.pending_audio = Some(PendingAudioCommand::Pause);
+                }
+                self.notify("Sleep timer ended — paused");
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// The next sleep-timer preset, cycling off → 15m → 30m → 60m → off.
+fn next_sleep_duration(current: Option<Duration>) -> Option<Duration> {
+    const FIFTEEN: u64 = 15 * 60;
+    const THIRTY: u64 = 30 * 60;
+    const SIXTY: u64 = 60 * 60;
+    match current.map(|d| d.as_secs()) {
+        None => Some(Duration::from_secs(FIFTEEN)),
+        Some(FIFTEEN) => Some(Duration::from_secs(THIRTY)),
+        Some(THIRTY) => Some(Duration::from_secs(SIXTY)),
+        _ => None,
     }
 }
 
@@ -191,6 +260,8 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
         p.on_error(move |msg| {
             let _ = tx.try_send(msg);
         });
+        // Spawn the recorder up front (even when off) so it can be toggled at runtime.
+        p.configure_recording(config.recording.to_config());
     }
     let _audio_error_tx = audio_error_tx; // keep alive so channel never auto-closes
 
@@ -277,6 +348,7 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
     let mut prev_show_help = false;
     let mut prev_show_popup = false;
     let mut prev_popup_song_id: Option<String> = None;
+    let mut last_recorded_artwork: Option<String> = None;
     loop {
         // Check if the song changed and we need to fetch new artwork
         if state.artwork_url.as_deref() != current_artwork_url.as_deref() {
@@ -464,6 +536,38 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
             }
         }
 
+        // Process pending recording control from a key handler.
+        if let Some(action) = state.pending_recording.take() {
+            if let Some(ref mut p) = player {
+                match action {
+                    RecordingAction::Cycle => {
+                        let mode = p.cycle_recording_mode();
+                        state.recording_mode = mode;
+                        if mode != RecordMode::Off && !stream_quality.is_recordable() {
+                            state
+                                .notify("Recording on — switch to the OGG stream to capture songs");
+                        } else {
+                            state.notify(format!("Recording: {}", mode.label()));
+                        }
+                    }
+                    RecordingAction::Keep => {
+                        p.keep_recording();
+                        state.notify("Keeping the last recorded song");
+                    }
+                }
+            } else {
+                state.notify("No audio output — recording unavailable");
+            }
+        }
+
+        // Keep the recorder's artwork in sync with the now-playing song.
+        if state.artwork_url != last_recorded_artwork {
+            last_recorded_artwork = state.artwork_url.clone();
+            if let Some(ref p) = player {
+                p.set_now_playing_artwork(state.artwork_url.clone());
+            }
+        }
+
         // Force full terminal clear when any overlay is dismissed to erase stale cells.
         let show_popup = state.show_song_detail.is_some();
         if (prev_show_help && !state.show_help) || (prev_show_popup && !show_popup) {
@@ -485,6 +589,7 @@ pub async fn run(config: Config, mut api: ApiClient) -> anyhow::Result<()> {
             EventAction::Quit => break,
         }
 
+        state.tick_sleep_timer();
         state.clear_expired_notification();
     }
 
@@ -563,6 +668,15 @@ async fn handle_event(event: AppEvent, state: &mut AppState, api: &mut ApiClient
                 KeyCode::Char('q') if state.view != View::Login => return EventAction::Quit,
                 KeyCode::Char('?') if state.view != View::Login => {
                     state.show_help = !state.show_help;
+                }
+                KeyCode::Char('t') if state.view != View::Login => {
+                    state.cycle_sleep_timer();
+                }
+                KeyCode::Char('R') if state.view != View::Login => {
+                    state.pending_recording = Some(RecordingAction::Cycle);
+                }
+                KeyCode::Char('s') if state.view != View::Login => {
+                    state.pending_recording = Some(RecordingAction::Keep);
                 }
                 KeyCode::Char('1') if state.view != View::Login => {
                     state.view = View::NowPlaying;
@@ -1033,6 +1147,17 @@ async fn handle_list_key(
                 Err(e) => state.notify(format!("Error: {}", e)),
             }
         }
+        KeyCode::Char('e') if view_name == "favorites" => {
+            if state.is_authenticated {
+                tracing::info!("Exporting favorites");
+                match api.export_favorites().await {
+                    Ok(link) => state.notify(format!("Export ready: {link}")),
+                    Err(e) => state.notify(format!("Export failed: {e}")),
+                }
+            } else {
+                state.notify("Login required to export favorites");
+            }
+        }
         KeyCode::Char('h') | KeyCode::Left if view_name == "charts" => {
             state.chart_range = match state.chart_range {
                 RatingRange::Overtime => RatingRange::Monthly,
@@ -1234,6 +1359,18 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, st
         ""
     };
     let volume = format!(" | Vol: {:.0}%", state.volume * 100.0);
+    let sleep = state
+        .sleep_remaining()
+        .map(|left| {
+            let secs = left.as_secs();
+            format!(" | \u{1f4a4} {}:{:02}", secs / 60, secs % 60)
+        })
+        .unwrap_or_default();
+    let recording = if state.recording_mode == RecordMode::Off {
+        String::new()
+    } else {
+        format!(" | \u{25cf} REC {}", state.recording_mode.label())
+    };
     let auth_note = if !state.is_authenticated {
         " | Guest"
     } else {
@@ -1256,6 +1393,8 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, st
             ratatui::style::Style::default().fg(Theme::GREEN),
         ),
         Span::styled(&volume, Theme::dim()),
+        Span::styled(&sleep, ratatui::style::Style::default().fg(Theme::PURPLE)),
+        Span::styled(&recording, ratatui::style::Style::default().fg(Theme::RED)),
         Span::styled(auth_note, Theme::dim()),
         Span::styled(
             &notification,
@@ -1266,4 +1405,32 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, st
 
     let para = Paragraph::new(line).style(ratatui::style::Style::default().bg(Theme::BACKGROUND));
     frame.render_widget(para, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sleep_timer_cycles_through_presets_and_back_to_off() {
+        let mins = |d: Option<Duration>| d.map(|d| d.as_secs() / 60);
+
+        let fifteen = next_sleep_duration(None);
+        assert_eq!(mins(fifteen), Some(15));
+
+        let thirty = next_sleep_duration(fifteen);
+        assert_eq!(mins(thirty), Some(30));
+
+        let sixty = next_sleep_duration(thirty);
+        assert_eq!(mins(sixty), Some(60));
+
+        // After the longest preset it wraps back to off.
+        assert_eq!(next_sleep_duration(sixty), None);
+    }
+
+    #[test]
+    fn sleep_timer_off_is_the_terminal_state_for_unknown_durations() {
+        // A value that isn't one of the presets disarms rather than getting stuck.
+        assert_eq!(next_sleep_duration(Some(Duration::from_secs(42))), None);
+    }
 }

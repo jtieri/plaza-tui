@@ -22,6 +22,7 @@ fn test_config_round_trip() {
         stream_quality: StreamQuality::Ogg,
         volume: 0.65,
         image_protocol: Some("kitty".to_string()),
+        recording: Default::default(),
     };
 
     write_config_to(&dir, &original);
@@ -78,6 +79,7 @@ fn test_config_serialize_deserialize_all_qualities() {
             stream_quality: quality,
             volume: 0.5,
             image_protocol: None,
+            recording: Default::default(),
         };
         let serialized = toml::to_string_pretty(&config).unwrap();
         let deserialized: Config = toml::from_str(&serialized).unwrap();
